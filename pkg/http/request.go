@@ -49,7 +49,7 @@ func SendCSR(url string, csr string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode > http.StatusBadRequest {
 		return fmt.Errorf("received non-OK response: %s", resp.Status)
 	}
 
@@ -58,7 +58,7 @@ func SendCSR(url string, csr string) error {
 		return fmt.Errorf("failed to parse JSON response: %v", err)
 	}
 
-	fmt.Printf("Response: %+v\n", responseBody)
+	fmt.Printf("%+v\n", responseBody["cert"])
 
 	return nil
 }
