@@ -52,4 +52,10 @@ func ExecuteVersionCommand(arg []string, versionFlagSet *flag.FlagSet) {
 	fmt.Printf("    CLI X.509 Certificate Signer URL: %s\n", signer.DEFAULT_SIGNER_ZTS_SIGN_URL)
 	fmt.Printf("    CLI X.509 Certificate CA Endpoint: %s\n", signer.DEFAULT_SIGNER_ZTS_CA_URL)
 	fmt.Printf("    CLI X.509 Certificate Request Timeout: %s seconds\n", signer.DEFAULT_SIGNER_ZTS_TIMEOUT)
+	fmt.Printf("  CLI X.509 configuration for Vault:\n")
+	fmt.Printf("    CLI X.509 Certificate Signer URL: %s\n", signer.DEFAULT_SIGNER_VAULT_SIGN_URL)
+	fmt.Printf("    CLI X.509 Certificate CA URL: %s\n", signer.DEFAULT_SIGNER_VAULT_CA_URL)
+	fmt.Printf("    CLI X.509 Certificate Issuer Reference: %s\n", signer.DEFAULT_SIGNER_VAULT_ISSUER_REF)
+	fmt.Printf("    CLI X.509 Certificate TTL: %s\n", signer.DEFAULT_SIGNER_VAULT_TTL)
+	fmt.Printf("    CLI X.509 Certificate Request Timeout: %s seconds\n", signer.DEFAULT_SIGNER_VAULT_TIMEOUT)
 }
