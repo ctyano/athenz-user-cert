@@ -380,6 +380,13 @@ func resolveSignerEndpoints(signerName, endpoint, caEndpoint *string) {
 		if *caEndpoint == "" {
 			*caEndpoint = signer.DEFAULT_SIGNER_ZTS_CA_URL
 		}
+	case "vault":
+		if *signerURL == "" {
+			*signerURL = signer.DEFAULT_SIGNER_VAULT_SIGN_URL
+		}
+		if *caURL == "" {
+			*caURL = signer.DEFAULT_SIGNER_VAULT_CA_URL
+		}
 	}
 }
 
