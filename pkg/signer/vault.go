@@ -73,7 +73,7 @@ func SendVaultCSR(commonName string, url string, csr string, headers *map[string
 	}
 
 	type data struct {
-		Uxpiration  string   `json:"expiration"`
+		Expiration  string   `json:"expiration"`
 		Certificate string   `json:"certificate"`
 		CA          string   `json:"issuing_ca"`
 		CAChain     []string `json:"ca_chain"`
