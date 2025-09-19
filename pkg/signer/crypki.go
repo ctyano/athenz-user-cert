@@ -13,7 +13,7 @@ import (
 var (
 	DEFAULT_SIGNER_CRYPKI_SIGN_URL   = "http://localhost:10000/v3/sig/x509-cert/keys/x509-key"
 	DEFAULT_SIGNER_CRYPKI_CA_URL     = "http://localhost:10000/v3/sig/x509-cert/keys/x509-key"
-	DEFAULT_SIGNER_CRYPKI_VALIDITY   = "2592000" // 30 * 24 * 60 * 60, 30 days in seconds
+	DEFAULT_SIGNER_CRYPKI_VALIDITY   = "43200" // 30 * 24 * 60, 1 hour in seconds
 	DEFAULT_SIGNER_CRYPKI_IDENTIFIER = "athenz"
 	DEFAULT_SIGNER_CRYPKI_TIMEOUT    = "10" // in seconds
 )

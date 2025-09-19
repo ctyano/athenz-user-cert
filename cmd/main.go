@@ -180,8 +180,16 @@ Options:
 			fmt.Fprintf(stdout, "CA certificate:\n%s\n", cacert)
 		}
 	case "vault":
+		err, vaulttoken := signer.GetVaultToken(signer.DEFAULT_SIGNER_VAULT_JWT_LOGIN_URL, signer.DEFAULT_SIGNER_VAULT_JWT_ROLE, accesstoken, nil)
+		if err != nil {
+			fmt.Printf("Failed to get vault token: %s\n", err)
+			os.Exit(1)
+		}
+		if *debug {
+			fmt.Printf("Vault Token retrieved Successfully:\n%s\n", vaulttoken)
+		}
 		err, cert = signer.SendVaultCSR(*commonName, *signerURL, csr, &map[string][]string{
-			"Authorization": []string{"Bearer " + accesstoken},
+			"X-Vault-Token": []string{vaulttoken},
 		})
 		if err != nil {
 			fmt.Printf("Failed to get signed certificate: %s\n", err)
@@ -191,7 +199,7 @@ Options:
 			fmt.Printf("Signed certificate:\n%s\n", cert)
 		}
 		err, cacert = signer.GetVaultRootCA(false, *caURL, &map[string][]string{
-			"Authorization": []string{"Bearer " + accesstoken},
+			"X-Vault-Token": []string{vaulttoken},
 		})
 		if err != nil {
 			fmt.Printf("Failed to get ca certificate: %s\n", err)
