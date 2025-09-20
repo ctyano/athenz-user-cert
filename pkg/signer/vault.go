@@ -19,7 +19,7 @@ var (
 	DEFAULT_SIGNER_VAULT_SIGN_URL      = "http://localhost:10000/v1/" + DEFAULT_SIGNER_VAULT_PKI_NAME + "/sign/" + DEFAULT_SIGNER_VAULT_PKI_ROLE
 	DEFAULT_SIGNER_VAULT_CA_URL        = "http://localhost:10000/v1/" + DEFAULT_SIGNER_VAULT_PKI_NAME + "/cert/ca_chain"
 	DEFAULT_SIGNER_VAULT_ISSUER_REF    = "default"
-	DEFAULT_SIGNER_VAULT_TTL           = "1 hour"
+	DEFAULT_SIGNER_VAULT_TTL           = "1h"
 	DEFAULT_SIGNER_VAULT_TIMEOUT       = "10" // in seconds
 )
 
