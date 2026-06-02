@@ -23,9 +23,7 @@ env:
   NFPM_SOURCE_IMAGES: athenz-user-cert
   NFPM_TARGET_PACKAGER: apk,deb,rpm
   NFPM_TARGET_COMPONENTS: athenz-user-cert
-  GITHUB_REPOSITORY: ctyano/athenz-user-cert
   TARBALL_TARGET_PLATFORMS: darwin/amd64,darwin/arm64
-  TRACKING_GIT_REPO: ctyano/athenz-user-cert
 
 jobs:
   build:
@@ -118,6 +116,8 @@ jobs:
           args: release
         env:
           GITHUB_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           # https://github.com/goreleaser/goreleaser/tags
           VERSION: v1.26.2
-

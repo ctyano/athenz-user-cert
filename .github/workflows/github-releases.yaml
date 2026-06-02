@@ -26,7 +26,6 @@ env:
   NFPM_SOURCE_IMAGES: athenz-user-cert
   NFPM_TARGET_PACKAGER: apk,deb,rpm
   NFPM_TARGET_COMPONENTS: athenz-user-cert
-  GITHUB_REPOSITORY: ctyano/athenz-user-cert
   TARBALL_TARGET_PLATFORMS: darwin/amd64,darwin/arm64
   #TRACKING_GIT_REPO: AthenZ/athenz
 
@@ -181,7 +180,7 @@ jobs:
             -XPOST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
             -d "{\"tag_name\":\"$tag\",\"name\":\"$tag Release\",\"body\":\"$body\",\"draft\":false,\"prerelease\":false}"
 
       # A GitHub Action to upload release assets
@@ -204,7 +203,7 @@ jobs:
             -XGET \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/$tag" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" \
             | jq '.id')
           for file in $(echo ${{ env.NFPM_TARGET_PACKAGER }} | sed -e 's/\([^,]*\)/\*.\1/g' | tr "," "\n"); do
             curl \
@@ -213,5 +212,5 @@ jobs:
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Content-Type: $(file --mime-type -b $file)" \
               --data-binary @$file \
-              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$release_id/assets?name=$(basename $file)"
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$(basename $file)"
           done
