@@ -195,7 +195,7 @@ buildx:
 	DOCKER_BUILDKIT=1 docker buildx build $(BUILD_ARG) $(XPLATFORM_ARGS) $(PUSH_OPTION) --cache-from $$IMAGE_NAME -t $$IMAGE_NAME -t $$LATEST_IMAGE_NAME -f $$DOCKERFILE_PATH .
 
 mirror-amd64-images:
-	IMAGE=$(APP_NAME); docker pull --platform linux/amd64 ghcr.io/ctyano/$$IMAGE:latest && docker tag ghcr.io/ctyano/$$IMAGE:latest docker.io/tatyano/$$IMAGE:latest && docker push docker.io/tatyano/$$IMAGE:latest
+	IMAGE=$(APP_NAME); docker pull --platform linux/amd64 $(DOCKER_REGISTRY)$$IMAGE:latest && docker tag $(DOCKER_REGISTRY)$$IMAGE:latest docker.io/tatyano/$$IMAGE:latest && docker push docker.io/tatyano/$$IMAGE:latest
 
 install-golang:
 	which go \

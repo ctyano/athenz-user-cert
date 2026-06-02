@@ -1,5 +1,9 @@
 ---
 project_name: athenz-user-cert
+release:
+  github:
+    owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+    name: "{{ .Env.GITHUB_REPOSITORY_NAME }}"
 # https://github.com/goreleaser/goreleaser/blob/v1.13.1/www/docs/customization/build.md
 builds:
   - id: "athenz-user-cert"
@@ -24,11 +28,11 @@ archives:
 # curl -sL https://git.io/goreleaser | VERSION=v1.13.1 GITHUB_TOKEN=<GITHUB_TOKEN> bash 
 brews:
   - tap:
-      owner: ctyano
+      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
       name: athenz-user-cert
     name: athenz-user-cert
     folder: Formula
-    homepage: https://github.com/ctyano/athenz-user-cert
+    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
     description: CLI to retrieve Athenz-compatible User Certificate
     ids:
       - homebrew
