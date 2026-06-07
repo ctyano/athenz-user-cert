@@ -116,10 +116,57 @@ func TestOIDCIssuerFlag(t *testing.T) {
 			t.Fatalf("flag parse returned error: %v", err)
 		}
 
-		applyOIDCFlagOverrides(flags)
+		if err := applyOIDCFlagOverrides(flags); err != nil {
+			t.Fatalf("applyOIDCFlagOverrides returned error: %v", err)
+		}
 
 		if oidc.DEFAULT_OIDC_ISSUER != "https://issuer.flag.example" {
 			t.Fatalf("expected issuer from flag, got %q", oidc.DEFAULT_OIDC_ISSUER)
+		}
+	})
+
+	t.Run("rejects empty issuer", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse([]string{"-oidc-issuer", "   "}); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+
+		if err := applyOIDCFlagOverrides(flags); err == nil || !strings.Contains(err.Error(), "cannot be empty") {
+			t.Fatalf("expected empty issuer error, got %v", err)
+		}
+	})
+
+	t.Run("rejects unsupported scheme", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse([]string{"-oidc-issuer", "ftp://issuer.flag.example"}); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+
+		if err := applyOIDCFlagOverrides(flags); err == nil || !strings.Contains(err.Error(), "must start with http:// or https://") {
+			t.Fatalf("expected scheme validation error, got %v", err)
+		}
+	})
+
+	t.Run("rejects missing host", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse([]string{"-oidc-issuer", "https://"}); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+
+		if err := applyOIDCFlagOverrides(flags); err == nil || !strings.Contains(err.Error(), "invalid OIDC issuer URL") {
+			t.Fatalf("expected invalid issuer error, got %v", err)
 		}
 	})
 
