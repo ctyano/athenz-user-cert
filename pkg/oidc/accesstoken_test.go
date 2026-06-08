@@ -121,17 +121,24 @@ func TestParseAuthInputHandlesFragmentCallback(t *testing.T) {
 }
 
 func TestValidateAuthCodeResultRejectsMissingState(t *testing.T) {
-	err := validateAuthCodeResult(authCodeResult{Code: "test-code"}, "expected-state")
+	err := validateAuthCodeResult(authCodeResult{Code: "test-code"}, "expected-state", true)
 	if err == nil {
-		t.Fatal("expected missing state to return an error")
+		t.Fatal("expected missing state to return an error when required")
 	}
 	if !strings.Contains(err.Error(), "did not include state") {
 		t.Fatalf("expected missing state error, got %v", err)
 	}
 }
 
+func TestValidateAuthCodeResultAcceptsMissingStateWhenNotRequired(t *testing.T) {
+	err := validateAuthCodeResult(authCodeResult{Code: "test-code"}, "expected-state", false)
+	if err != nil {
+		t.Fatalf("expected missing state to succeed when not required, got %v", err)
+	}
+}
+
 func TestValidateAuthCodeResultRejectsStateMismatch(t *testing.T) {
-	err := validateAuthCodeResult(authCodeResult{Code: "test-code", State: "wrong-state"}, "expected-state")
+	err := validateAuthCodeResult(authCodeResult{Code: "test-code", State: "wrong-state"}, "expected-state", true)
 	if err == nil {
 		t.Fatal("expected state mismatch to return an error")
 	}
@@ -141,7 +148,7 @@ func TestValidateAuthCodeResultRejectsStateMismatch(t *testing.T) {
 }
 
 func TestValidateAuthCodeResultAcceptsMatchingState(t *testing.T) {
-	err := validateAuthCodeResult(authCodeResult{Code: "test-code", State: "expected-state"}, "expected-state")
+	err := validateAuthCodeResult(authCodeResult{Code: "test-code", State: "expected-state"}, "expected-state", true)
 	if err != nil {
 		t.Fatalf("expected matching state to succeed, got %v", err)
 	}
