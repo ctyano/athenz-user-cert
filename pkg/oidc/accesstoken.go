@@ -440,7 +440,7 @@ func validateAuthCodeResult(result authCodeResult, expectedState string, require
 }
 
 func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult, error) {
-	if currentGOOS == "darwin" || currentGOOS == "linux" {
+	if currentGOOS == "darwin" || currentGOOS == "linux" || currentGOOS == "windows" {
 		authCodeURL, err := buildAuthCodeURL(conf, *responseMode)
 		if err != nil {
 			return authCodeResult{}, err
