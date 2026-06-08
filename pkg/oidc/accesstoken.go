@@ -33,22 +33,16 @@ var (
 	currentGOOS                        = runtime.GOOS
 	authCodeInputReader      io.Reader = os.Stdin
 	openBrowserFunc                    = func(authCodeURL string) error {
-		var cmd string
-		switch runtime.GOOS {
+		switch currentGOOS {
 		case "darwin":
-			cmd = "open"
+			return exec.Command("open", authCodeURL).Start()
 		case "linux":
-			cmd = "xdg-open"
+			return exec.Command("xdg-open", authCodeURL).Start()
 		case "windows":
-			cmd = "start"
+			return exec.Command("rundll32", "url.dll,FileProtocolHandler", authCodeURL).Start()
 		default:
 			return nil
 		}
-		// on Windows, 'start' is a shell builtin and needs 'cmd /c'
-		if runtime.GOOS == "windows" {
-			return exec.Command("cmd", "/c", "start", authCodeURL).Start()
-		}
-		return exec.Command(cmd, authCodeURL).Start()
 	}
 	waitForCodeServerFunc              = waitForCodeServer
 	oidcDiscoveryFunc                  = GetOIDCDiscovery

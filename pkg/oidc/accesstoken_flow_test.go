@@ -279,7 +279,7 @@ func TestGetAuthCodeResultManualFlow(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "windows" // Force manual flow
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = strings.NewReader("http://127.0.0.1/callback?code=test-code&state=test-state\n")
 
 	conf := &oauthConfig{
@@ -309,7 +309,7 @@ func TestGetAuthCodeResultManualFlowAcceptsBareCode(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "windows" // Force manual flow
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = strings.NewReader("test-code\n")
 
 	conf := &oauthConfig{
@@ -335,7 +335,7 @@ func TestGetAuthCodeResultManualFlowPropagatesReadError(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "windows" // Force manual flow
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = errReader{}
 
 	conf := &oauthConfig{
@@ -357,7 +357,7 @@ func TestGetAuthCodeResultManualFlowHandlesEOFWithoutInput(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "windows" // Force manual flow
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = strings.NewReader("")
 
 	conf := &oauthConfig{
@@ -381,6 +381,7 @@ func TestGetAuthCodeResultAutomaticFlow(t *testing.T) {
 	}{
 		{"darwin"},
 		{"linux"},
+		{"windows"},
 	}
 
 	for _, tc := range tests {
