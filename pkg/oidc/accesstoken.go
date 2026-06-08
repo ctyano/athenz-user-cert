@@ -32,7 +32,18 @@ var (
 
 	currentGOOS                        = runtime.GOOS
 	authCodeInputReader      io.Reader = os.Stdin
-	openBrowserFunc                    = func(authCodeURL string) error { return exec.Command("open", authCodeURL).Start() }
+	openBrowserFunc                    = func(authCodeURL string) error {
+		switch currentGOOS {
+		case "darwin":
+			return exec.Command("open", authCodeURL).Start()
+		case "linux":
+			return exec.Command("xdg-open", authCodeURL).Start()
+		case "windows":
+			return exec.Command("rundll32", "url.dll,FileProtocolHandler", authCodeURL).Start()
+		default:
+			return nil
+		}
+	}
 	waitForCodeServerFunc              = waitForCodeServer
 	oidcDiscoveryFunc                  = GetOIDCDiscovery
 	buildPKCEOAuthConfigFunc           = buildPKCEOAuthConfig
@@ -406,12 +417,15 @@ func parseAuthInput(raw string) (authCodeResult, error) {
 	}, nil
 }
 
-func validateAuthCodeResult(result authCodeResult, expectedState string) error {
+func validateAuthCodeResult(result authCodeResult, expectedState string, required bool) error {
 	if expectedState == "" {
 		return nil
 	}
 	if result.State == "" {
-		return fmt.Errorf("authorization response did not include state")
+		if required {
+			return fmt.Errorf("authorization response did not include state")
+		}
+		return nil
 	}
 	if subtle.ConstantTimeCompare([]byte(result.State), []byte(expectedState)) != 1 {
 		return fmt.Errorf("authorization response state mismatch")
@@ -420,7 +434,7 @@ func validateAuthCodeResult(result authCodeResult, expectedState string) error {
 }
 
 func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult, error) {
-	if currentGOOS == "darwin" {
+	if currentGOOS == "darwin" || currentGOOS == "linux" || currentGOOS == "windows" {
 		authCodeURL, err := buildAuthCodeURL(conf, *responseMode)
 		if err != nil {
 			return authCodeResult{}, err
@@ -445,7 +459,7 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 			if result.Code == "" {
 				return authCodeResult{}, fmt.Errorf("no authorization code in callback")
 			}
-			if err := validateAuthCodeResult(result, conf.State); err != nil {
+			if err := validateAuthCodeResult(result, conf.State, true); err != nil {
 				return authCodeResult{}, err
 			}
 			return result, nil
@@ -459,7 +473,7 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		return authCodeResult{}, err
 	}
 	fmt.Printf("Open the following URL in your browser, log in, then paste the resulting authorization response here:\n%s\n", authCodeURL)
-	fmt.Printf("\nPaste the full callback URL or payload so the CLI can validate the OAuth state.\n")
+	fmt.Printf("\nPaste the authorization code or the full callback URL/payload.\n")
 	fmt.Print("Enter the authorization response: ")
 	scanner := bufio.NewScanner(authCodeInputReader)
 	if scanner.Scan() {
@@ -467,8 +481,8 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		if err != nil {
 			return authCodeResult{}, err
 		}
-		if err := validateAuthCodeResult(result, conf.State); err != nil {
-			return authCodeResult{}, fmt.Errorf("%w; paste the full callback URL or form payload instead of only the code", err)
+		if err := validateAuthCodeResult(result, conf.State, false); err != nil {
+			return authCodeResult{}, err
 		}
 		return result, nil
 	}

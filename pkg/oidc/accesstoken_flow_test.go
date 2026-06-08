@@ -279,7 +279,7 @@ func TestGetAuthCodeResultManualFlow(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "linux"
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = strings.NewReader("http://127.0.0.1/callback?code=test-code&state=test-state\n")
 
 	conf := &oauthConfig{
@@ -305,11 +305,11 @@ func TestGetAuthCodeResultManualFlow(t *testing.T) {
 	}
 }
 
-func TestGetAuthCodeResultManualFlowRejectsBareCodeWhenStateRequired(t *testing.T) {
+func TestGetAuthCodeResultManualFlowAcceptsBareCode(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "linux"
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = strings.NewReader("test-code\n")
 
 	conf := &oauthConfig{
@@ -322,8 +322,12 @@ func TestGetAuthCodeResultManualFlowRejectsBareCodeWhenStateRequired(t *testing.
 	}
 	responseMode := "query"
 
-	if _, err := getAuthCodeResult(conf, &responseMode); err == nil {
-		t.Fatal("expected getAuthCodeResult to reject bare code without state")
+	result, err := getAuthCodeResult(conf, &responseMode)
+	if err != nil {
+		t.Fatalf("expected getAuthCodeResult to accept bare code, got error: %v", err)
+	}
+	if result.Code != "test-code" {
+		t.Fatalf("expected code to be parsed, got %q", result.Code)
 	}
 }
 
@@ -331,7 +335,7 @@ func TestGetAuthCodeResultManualFlowPropagatesReadError(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "linux"
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = errReader{}
 
 	conf := &oauthConfig{
@@ -353,7 +357,7 @@ func TestGetAuthCodeResultManualFlowHandlesEOFWithoutInput(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
-	currentGOOS = "linux"
+	currentGOOS = "other" // Force manual flow
 	authCodeInputReader = strings.NewReader("")
 
 	conf := &oauthConfig{
@@ -371,47 +375,59 @@ func TestGetAuthCodeResultManualFlowHandlesEOFWithoutInput(t *testing.T) {
 	}
 }
 
-func TestGetAuthCodeResultDarwinFlow(t *testing.T) {
-	restore := saveOIDCFlowGlobals()
-	defer restore()
-
-	currentGOOS = "darwin"
-	openBrowserCalled := false
-	openBrowserFunc = func(authCodeURL string) error {
-		openBrowserCalled = strings.Contains(authCodeURL, "code_challenge=challenge")
-		return nil
-	}
-	waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
-		if listenAddress != DEFAULT_OIDC_LISTEN_ADDRESS {
-			t.Fatalf("expected listen address %q, got %q", DEFAULT_OIDC_LISTEN_ADDRESS, listenAddress)
-		}
-		return authCodeResult{Code: "test-code", State: "test-state", AttestationData: "code=test-code&state=test-state"}, nil
+func TestGetAuthCodeResultAutomaticFlow(t *testing.T) {
+	tests := []struct {
+		os string
+	}{
+		{"darwin"},
+		{"linux"},
+		{"windows"},
 	}
 
-	conf := &oauthConfig{
-		AuthURL:       "https://issuer.example/auth",
-		RedirectURL:   "http://127.0.0.1:8080",
-		ClientID:      "client-id",
-		State:         "test-state",
-		ResponseType:  "code",
-		Scopes:        []string{"openid"},
-		CodeChallenge: "challenge",
-	}
-	responseMode := "query"
+	for _, tc := range tests {
+		t.Run(tc.os, func(t *testing.T) {
+			restore := saveOIDCFlowGlobals()
+			defer restore()
 
-	result, err := getAuthCodeResult(conf, &responseMode)
-	if err != nil {
-		t.Fatalf("getAuthCodeResult returned error: %v", err)
-	}
-	if !openBrowserCalled {
-		t.Fatal("expected darwin flow to invoke browser opener")
-	}
-	if result.Code != "test-code" {
-		t.Fatalf("expected code to be returned, got %q", result.Code)
+			currentGOOS = tc.os
+			openBrowserCalled := false
+			openBrowserFunc = func(authCodeURL string) error {
+				openBrowserCalled = true
+				return nil
+			}
+			waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+				if listenAddress != DEFAULT_OIDC_LISTEN_ADDRESS {
+					t.Fatalf("expected listen address %q, got %q", DEFAULT_OIDC_LISTEN_ADDRESS, listenAddress)
+				}
+				return authCodeResult{Code: "test-code", State: "test-state", AttestationData: "code=test-code&state=test-state"}, nil
+			}
+
+			conf := &oauthConfig{
+				AuthURL:       "https://issuer.example/auth",
+				RedirectURL:   "http://127.0.0.1:8080",
+				ClientID:      "client-id",
+				State:         "test-state",
+				ResponseType:  "code",
+				Scopes:        []string{"openid"},
+				CodeChallenge: "challenge",
+			}
+			responseMode := "query"
+
+			result, err := getAuthCodeResult(conf, &responseMode)
+			if err != nil {
+				t.Fatalf("getAuthCodeResult returned error: %v", err)
+			}
+			if !openBrowserCalled {
+				t.Fatal("expected automatic flow to invoke browser opener")
+			}
+			if result.Code != "test-code" {
+				t.Fatalf("expected code to be returned, got %q", result.Code)
+			}
+		})
 	}
 }
 
-func TestGetAuthCodeResultDarwinFlowErrors(t *testing.T) {
+func TestGetAuthCodeResultAutomaticFlowErrors(t *testing.T) {
 	t.Run("callback server error", func(t *testing.T) {
 		restore := saveOIDCFlowGlobals()
 		defer restore()
