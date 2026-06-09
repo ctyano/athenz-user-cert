@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+const oidcOutOfBandRedirectURL = "urn:ietf:wg:oauth:2.0:oob"
+
 var (
 	DEFAULT_OIDC_CLIENT_ID             = "athenz-user-cert"
 	DEFAULT_OIDC_CLIENT_SECRET         = "athenz-user-cert"
@@ -30,9 +32,9 @@ var (
 	DEFAULT_OIDC_ACCESS_TOKEN_PATH     = ".athenz/.accesstoken"
 	DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM = "name"
 
-	currentGOOS                        = runtime.GOOS
-	authCodeInputReader      io.Reader = os.Stdin
-	openBrowserFunc                    = func(authCodeURL string) error {
+	currentGOOS                   = runtime.GOOS
+	authCodeInputReader io.Reader = os.Stdin
+	openBrowserFunc               = func(authCodeURL string) error {
 		switch currentGOOS {
 		case "darwin":
 			return exec.Command("open", authCodeURL).Start()
@@ -44,12 +46,12 @@ var (
 			return nil
 		}
 	}
-	waitForCodeServerFunc              = waitForCodeServer
-	oidcDiscoveryFunc                  = GetOIDCDiscovery
-	buildPKCEOAuthConfigFunc           = buildPKCEOAuthConfig
-	getAuthCodeResultFunc              = getAuthCodeResult
-	exchangeAuthCodeFunc               = exchangeAuthCode
-	randomReadFunc                     = rand.Read
+	waitForCodeServerFunc    = waitForCodeServer
+	oidcDiscoveryFunc        = GetOIDCDiscovery
+	buildPKCEOAuthConfigFunc = buildPKCEOAuthConfig
+	getAuthCodeResultFunc    = getAuthCodeResult
+	exchangeAuthCodeFunc     = exchangeAuthCode
+	randomReadFunc           = rand.Read
 )
 
 func getAccessTokenCachePath() string {
@@ -392,22 +394,27 @@ func parseAuthInput(raw string) (authCodeResult, error) {
 
 	parsedURL, err := url.Parse(raw)
 	if err == nil {
-		switch {
-		case parsedURL.Query().Get("code") != "":
+		if code := parsedURL.Query().Get("code"); code != "" {
 			return authCodeResult{
-				Code:            parsedURL.Query().Get("code"),
+				Code:            code,
 				State:           parsedURL.Query().Get("state"),
 				AttestationData: parsedURL.RawQuery,
 			}, nil
-		case parsedURL.Fragment != "":
+		}
+		if parsedURL.Fragment != "" {
 			values, err := url.ParseQuery(parsedURL.Fragment)
-			if err == nil && values.Get("code") != "" {
-				return authCodeResult{
-					Code:            values.Get("code"),
-					State:           values.Get("state"),
-					AttestationData: parsedURL.Fragment,
-				}, nil
+			if err == nil {
+				if code := values.Get("code"); code != "" {
+					return authCodeResult{
+						Code:            code,
+						State:           values.Get("state"),
+						AttestationData: parsedURL.Fragment,
+					}, nil
+				}
 			}
+		}
+		if parsedURL.Scheme != "" && parsedURL.Host != "" {
+			return authCodeResult{}, fmt.Errorf("authorization response URL did not include code")
 		}
 	}
 
@@ -466,9 +473,8 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		}
 	}
 
-	manualConf := *conf
-	manualConf.RedirectURL = "urn:ietf:wg:oauth:2.0:oob"
-	authCodeURL, err := buildAuthCodeURL(&manualConf, *responseMode)
+	conf.RedirectURL = oidcOutOfBandRedirectURL
+	authCodeURL, err := buildAuthCodeURL(conf, *responseMode)
 	if err != nil {
 		return authCodeResult{}, err
 	}

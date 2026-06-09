@@ -189,6 +189,16 @@ func TestParseAuthInputHandlesRawCode(t *testing.T) {
 	}
 }
 
+func TestParseAuthInputRejectsURLWithoutCode(t *testing.T) {
+	_, err := parseAuthInput("http://127.0.0.1:5556/dex/auth/local/login?back=&state=jwt75qxgvdinqnmgd2y7j4hch")
+	if err == nil {
+		t.Fatal("expected URL without authorization code to return an error")
+	}
+	if !strings.Contains(err.Error(), "code") {
+		t.Fatalf("expected missing code error, got %v", err)
+	}
+}
+
 func TestBuildAuthAttestationDataAndAccessTokenPropagatesExchangeError(t *testing.T) {
 	conf := &oauthConfig{CodeVerifier: "test-verifier"}
 	authResult := authCodeResult{
@@ -411,6 +421,9 @@ func TestGetAuthCodeResultLinuxUsesManualFlow(t *testing.T) {
 	}
 	if result.Code != "test-code" {
 		t.Fatalf("expected manual code to be parsed, got %q", result.Code)
+	}
+	if conf.RedirectURL != oidcOutOfBandRedirectURL {
+		t.Fatalf("expected linux manual flow to use redirect %q, got %q", oidcOutOfBandRedirectURL, conf.RedirectURL)
 	}
 }
 
@@ -656,6 +669,45 @@ func TestOIDCWrapperSuccessPaths(t *testing.T) {
 			return authCodeResult{Code: "test-code"}, nil
 		}
 		exchangeAuthCodeFunc = func(conf *oauthConfig, code string) (string, error) {
+			return "fresh-token", nil
+		}
+
+		responseMode := "query"
+		debug := false
+		got, err := GetAuthAccessToken(&responseMode, &debug)
+		if err != nil {
+			t.Fatalf("GetAuthAccessToken returned error: %v", err)
+		}
+		if got != "fresh-token" {
+			t.Fatalf("expected exchanged token, got %q", got)
+		}
+	})
+
+	t.Run("GetAuthAccessToken manual flow exchanges with out-of-band redirect", func(t *testing.T) {
+		restore := saveOIDCFlowGlobals()
+		defer restore()
+		t.Setenv("HOME", t.TempDir())
+
+		currentGOOS = "linux"
+		authCodeInputReader = strings.NewReader("test-code\n")
+		openBrowserFunc = func(authCodeURL string) error {
+			t.Fatal("linux should not open browser for automatic callback flow")
+			return nil
+		}
+		waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+			t.Fatal("linux should not start automatic callback server")
+			return authCodeResult{}, nil
+		}
+		oidcDiscoveryFunc = func(debug *bool) (string, string, error) {
+			return "https://issuer.example/auth", "https://issuer.example/token", nil
+		}
+		exchangeAuthCodeFunc = func(conf *oauthConfig, code string) (string, error) {
+			if code != "test-code" {
+				t.Fatalf("expected auth code to be exchanged, got %q", code)
+			}
+			if conf.RedirectURL != oidcOutOfBandRedirectURL {
+				t.Fatalf("expected redirect %q, got %q", oidcOutOfBandRedirectURL, conf.RedirectURL)
+			}
 			return "fresh-token", nil
 		}
 
