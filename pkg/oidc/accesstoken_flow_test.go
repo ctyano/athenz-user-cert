@@ -170,32 +170,32 @@ func TestExchangeAuthCodeAdditionalErrorPaths(t *testing.T) {
 	})
 }
 
-func TestParseAuthInputRejectsEmptyValue(t *testing.T) {
-	if _, err := parseAuthInput(" \n "); err == nil {
+func TestParseManualAuthCodeRejectsEmptyValue(t *testing.T) {
+	if _, err := parseManualAuthCode(" \n "); err == nil {
 		t.Fatal("expected empty authorization input to return an error")
 	}
 }
 
-func TestParseAuthInputHandlesRawCode(t *testing.T) {
-	result, err := parseAuthInput("raw-authorization-code")
+func TestParseManualAuthCodeHandlesRawCode(t *testing.T) {
+	result, err := parseManualAuthCode("raw-authorization-code")
 	if err != nil {
-		t.Fatalf("parseAuthInput returned error: %v", err)
+		t.Fatalf("parseManualAuthCode returned error: %v", err)
 	}
 	if result.Code != "raw-authorization-code" {
 		t.Fatalf("expected raw code to be preserved, got %q", result.Code)
 	}
-	if result.AttestationData != "raw-authorization-code" {
-		t.Fatalf("expected raw attestation data to be preserved, got %q", result.AttestationData)
+	if result.AttestationData != "code=raw-authorization-code" {
+		t.Fatalf("expected attestation data to contain the code, got %q", result.AttestationData)
 	}
 }
 
-func TestParseAuthInputRejectsURLWithoutCode(t *testing.T) {
-	_, err := parseAuthInput("http://127.0.0.1:5556/dex/auth/local/login?back=&state=jwt75qxgvdinqnmgd2y7j4hch")
+func TestParseManualAuthCodeRejectsBrowserURL(t *testing.T) {
+	_, err := parseManualAuthCode("http://127.0.0.1:5556/dex/auth/local/login?back=&state=jwt75qxgvdinqnmgd2y7j4hch")
 	if err == nil {
-		t.Fatal("expected URL without authorization code to return an error")
+		t.Fatal("expected browser URL input to return an error")
 	}
-	if !strings.Contains(err.Error(), "code") {
-		t.Fatalf("expected missing code error, got %v", err)
+	if !strings.Contains(err.Error(), "paste only the authorization code") {
+		t.Fatalf("expected authorization code guidance, got %v", err)
 	}
 }
 
@@ -286,36 +286,6 @@ func TestBuildAuthCodeURLOmitsEmptyResponseMode(t *testing.T) {
 	}
 }
 
-func TestGetAuthCodeResultManualFlow(t *testing.T) {
-	restore := saveOIDCFlowGlobals()
-	defer restore()
-
-	currentGOOS = "other" // Force manual flow
-	authCodeInputReader = strings.NewReader("code=test-code&state=test-state\n")
-
-	conf := &oauthConfig{
-		AuthURL:       "https://issuer.example/auth",
-		RedirectURL:   "http://127.0.0.1:8080",
-		ClientID:      "client-id",
-		State:         "test-state",
-		ResponseType:  "code",
-		Scopes:        []string{"openid"},
-		CodeChallenge: "challenge",
-	}
-	responseMode := "query"
-
-	result, err := getAuthCodeResult(conf, &responseMode)
-	if err != nil {
-		t.Fatalf("getAuthCodeResult returned error: %v", err)
-	}
-	if result.Code != "test-code" {
-		t.Fatalf("expected code to be parsed, got %q", result.Code)
-	}
-	if result.State != "test-state" {
-		t.Fatalf("expected state to be parsed, got %q", result.State)
-	}
-}
-
 func TestGetAuthCodeResultManualFlowRejectsBrowserURL(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
@@ -337,8 +307,8 @@ func TestGetAuthCodeResultManualFlowRejectsBrowserURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected browser URL input to be rejected")
 	}
-	if !strings.Contains(err.Error(), "not the browser URL") {
-		t.Fatalf("expected browser URL guidance, got %v", err)
+	if !strings.Contains(err.Error(), "paste only the authorization code") {
+		t.Fatalf("expected authorization code guidance, got %v", err)
 	}
 }
 
