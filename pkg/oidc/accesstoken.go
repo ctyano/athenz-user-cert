@@ -394,26 +394,26 @@ func parseAuthInput(raw string) (authCodeResult, error) {
 
 	parsedURL, err := url.Parse(raw)
 	if err == nil {
-		switch {
-		case parsedURL.Query().Get("code") != "":
+		if code := parsedURL.Query().Get("code"); code != "" {
 			return authCodeResult{
-				Code:            parsedURL.Query().Get("code"),
+				Code:            code,
 				State:           parsedURL.Query().Get("state"),
 				AttestationData: parsedURL.RawQuery,
 			}, nil
-		case parsedURL.Fragment != "":
+		}
+		if parsedURL.Fragment != "" {
 			values, err := url.ParseQuery(parsedURL.Fragment)
-			if err == nil && values.Get("code") != "" {
-				return authCodeResult{
-					Code:            values.Get("code"),
-					State:           values.Get("state"),
-					AttestationData: parsedURL.Fragment,
-				}, nil
+			if err == nil {
+				if code := values.Get("code"); code != "" {
+					return authCodeResult{
+						Code:            code,
+						State:           values.Get("state"),
+						AttestationData: parsedURL.Fragment,
+					}, nil
+				}
 			}
-			if parsedURL.Scheme != "" && parsedURL.Host != "" {
-				return authCodeResult{}, fmt.Errorf("authorization response URL did not include code")
-			}
-		case parsedURL.Scheme != "" && parsedURL.Host != "":
+		}
+		if parsedURL.Scheme != "" && parsedURL.Host != "" {
 			return authCodeResult{}, fmt.Errorf("authorization response URL did not include code")
 		}
 	}
