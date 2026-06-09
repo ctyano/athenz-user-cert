@@ -416,9 +416,6 @@ func parseAuthInput(raw string) (authCodeResult, error) {
 		if parsedURL.Scheme != "" && parsedURL.Host != "" {
 			return authCodeResult{}, fmt.Errorf("authorization response URL did not include code")
 		}
-		if parsedURL.Scheme != "" && parsedURL.Host != "" {
-			return authCodeResult{}, fmt.Errorf("authorization response URL did not include code")
-		}
 	}
 
 	return authCodeResult{
