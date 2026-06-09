@@ -377,51 +377,26 @@ func parseAccessTokenResponse(body io.Reader) (string, error) {
 	return token.AccessToken, nil
 }
 
-func parseAuthInput(raw string) (authCodeResult, error) {
+func parseManualAuthCode(raw string) (authCodeResult, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return authCodeResult{}, fmt.Errorf("authorization response is empty")
+		return authCodeResult{}, fmt.Errorf("authorization code is empty")
+	}
+	if isManualURLInput(raw) {
+		return authCodeResult{}, fmt.Errorf("manual authorization flow uses an out-of-band redirect; paste only the authorization code displayed by the browser")
 	}
 
-	values, err := url.ParseQuery(raw)
-	if err == nil && values.Get("code") != "" {
-		return authCodeResult{
-			Code:            values.Get("code"),
-			State:           values.Get("state"),
-			AttestationData: raw,
-		}, nil
-	}
-
-	parsedURL, err := url.Parse(raw)
-	if err == nil {
-		if code := parsedURL.Query().Get("code"); code != "" {
-			return authCodeResult{
-				Code:            code,
-				State:           parsedURL.Query().Get("state"),
-				AttestationData: parsedURL.RawQuery,
-			}, nil
-		}
-		if parsedURL.Fragment != "" {
-			values, err := url.ParseQuery(parsedURL.Fragment)
-			if err == nil {
-				if code := values.Get("code"); code != "" {
-					return authCodeResult{
-						Code:            code,
-						State:           values.Get("state"),
-						AttestationData: parsedURL.Fragment,
-					}, nil
-				}
-			}
-		}
-		if parsedURL.Scheme != "" && parsedURL.Host != "" {
-			return authCodeResult{}, fmt.Errorf("authorization response URL did not include code")
-		}
-	}
-
+	values := url.Values{}
+	values.Set("code", raw)
 	return authCodeResult{
 		Code:            raw,
-		AttestationData: raw,
+		AttestationData: values.Encode(),
 	}, nil
+}
+
+func isManualURLInput(raw string) bool {
+	parsedURL, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && parsedURL.Scheme != "" && (parsedURL.Host != "" || parsedURL.Scheme == "urn")
 }
 
 func validateAuthCodeResult(result authCodeResult, expectedState string, required bool) error {
@@ -478,12 +453,12 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 	if err != nil {
 		return authCodeResult{}, err
 	}
-	fmt.Printf("Open the following URL in your browser, log in, then paste the resulting authorization response here:\n%s\n", authCodeURL)
-	fmt.Printf("\nPaste the authorization code or the full callback URL/payload.\n")
-	fmt.Print("Enter the authorization response: ")
+	fmt.Printf("Open the following URL in your browser and log in:\n%s\n", authCodeURL)
+	fmt.Printf("\nPaste the authorization code displayed by the browser.\n")
+	fmt.Print("Enter the authorization code: ")
 	scanner := bufio.NewScanner(authCodeInputReader)
 	if scanner.Scan() {
-		result, err := parseAuthInput(scanner.Text())
+		result, err := parseManualAuthCode(scanner.Text())
 		if err != nil {
 			return authCodeResult{}, err
 		}
@@ -493,9 +468,9 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		return result, nil
 	}
 	if err := scanner.Err(); err != nil {
-		return authCodeResult{}, fmt.Errorf("failed to read authorization response: %v", err)
+		return authCodeResult{}, fmt.Errorf("failed to read authorization code: %v", err)
 	}
-	return authCodeResult{}, fmt.Errorf("failed to read authorization response")
+	return authCodeResult{}, fmt.Errorf("failed to read authorization code")
 }
 
 func buildAttestationData(result authCodeResult, codeVerifier string) string {
@@ -638,7 +613,7 @@ func GetPasswordGrantAccessToken(username, password string, debug *bool) (string
 }
 
 // waitForCodeServer runs a local HTTP server to capture the OAuth2 code via GET or POST.
-// Returns the code and the raw callback payload.
+// Returns the code and the raw callback parameters.
 func waitForCodeServer(listenAddress string) (authCodeResult, error) {
 	codeCh := make(chan authCodeResult, 1)
 	errCh := make(chan error, 1)

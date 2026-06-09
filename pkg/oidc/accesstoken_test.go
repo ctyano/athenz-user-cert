@@ -86,40 +86,6 @@ func TestBuildAuthCodeURLIncludesPKCE(t *testing.T) {
 	}
 }
 
-func TestParseAuthInputHandlesFullCallbackURL(t *testing.T) {
-	result, err := parseAuthInput("http://127.0.0.1:8080/?code=test-code&state=test-state")
-	if err != nil {
-		t.Fatalf("parseAuthInput returned error: %v", err)
-	}
-
-	if result.Code != "test-code" {
-		t.Fatalf("expected code to be parsed from callback URL, got %q", result.Code)
-	}
-	if result.State != "test-state" {
-		t.Fatalf("expected state to be parsed from callback URL, got %q", result.State)
-	}
-	if result.AttestationData != "code=test-code&state=test-state" {
-		t.Fatalf("expected attestation data to contain raw query params, got %q", result.AttestationData)
-	}
-}
-
-func TestParseAuthInputHandlesFragmentCallback(t *testing.T) {
-	result, err := parseAuthInput("http://127.0.0.1:8080/#code=test-code&state=test-state")
-	if err != nil {
-		t.Fatalf("parseAuthInput returned error: %v", err)
-	}
-
-	if result.Code != "test-code" {
-		t.Fatalf("expected code to be parsed from callback fragment, got %q", result.Code)
-	}
-	if result.State != "test-state" {
-		t.Fatalf("expected state to be parsed from callback fragment, got %q", result.State)
-	}
-	if result.AttestationData != "code=test-code&state=test-state" {
-		t.Fatalf("expected attestation data to contain raw fragment params, got %q", result.AttestationData)
-	}
-}
-
 func TestValidateAuthCodeResultRejectsMissingState(t *testing.T) {
 	err := validateAuthCodeResult(authCodeResult{Code: "test-code"}, "expected-state", true)
 	if err == nil {
