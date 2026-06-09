@@ -291,7 +291,7 @@ func TestGetAuthCodeResultManualFlow(t *testing.T) {
 	defer restore()
 
 	currentGOOS = "other" // Force manual flow
-	authCodeInputReader = strings.NewReader("http://127.0.0.1/callback?code=test-code&state=test-state\n")
+	authCodeInputReader = strings.NewReader("code=test-code&state=test-state\n")
 
 	conf := &oauthConfig{
 		AuthURL:       "https://issuer.example/auth",
@@ -313,6 +313,32 @@ func TestGetAuthCodeResultManualFlow(t *testing.T) {
 	}
 	if result.State != "test-state" {
 		t.Fatalf("expected state to be parsed, got %q", result.State)
+	}
+}
+
+func TestGetAuthCodeResultManualFlowRejectsBrowserURL(t *testing.T) {
+	restore := saveOIDCFlowGlobals()
+	defer restore()
+
+	currentGOOS = "linux"
+	authCodeInputReader = strings.NewReader("http://127.0.0.1:5556/dex/auth/local/login?back=&code=test-code&state=dex-state\n")
+
+	conf := &oauthConfig{
+		AuthURL:      "https://issuer.example/auth",
+		RedirectURL:  "http://127.0.0.1:8080",
+		ClientID:     "client-id",
+		State:        "test-state",
+		ResponseType: "code",
+		Scopes:       []string{"openid"},
+	}
+	responseMode := "query"
+
+	_, err := getAuthCodeResult(conf, &responseMode)
+	if err == nil {
+		t.Fatal("expected browser URL input to be rejected")
+	}
+	if !strings.Contains(err.Error(), "not the browser URL") {
+		t.Fatalf("expected browser URL guidance, got %v", err)
 	}
 }
 

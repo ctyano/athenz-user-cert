@@ -427,6 +427,11 @@ func parseAuthInput(raw string) (authCodeResult, error) {
 	}, nil
 }
 
+func isBrowserURLInput(raw string) bool {
+	parsedURL, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && parsedURL.Scheme != "" && parsedURL.Host != ""
+}
+
 func validateAuthCodeResult(result authCodeResult, expectedState string, required bool) error {
 	if expectedState == "" {
 		return nil
@@ -482,11 +487,15 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		return authCodeResult{}, err
 	}
 	fmt.Printf("Open the following URL in your browser, log in, then paste the resulting authorization response here:\n%s\n", authCodeURL)
-	fmt.Printf("\nPaste the authorization code or the full callback URL/payload.\n")
-	fmt.Print("Enter the authorization response: ")
+	fmt.Printf("\nPaste the authorization code displayed by the browser. If the provider returns a form body, paste the code=...&state=... payload.\n")
+	fmt.Print("Enter the authorization code or payload: ")
 	scanner := bufio.NewScanner(authCodeInputReader)
 	if scanner.Scan() {
-		result, err := parseAuthInput(scanner.Text())
+		input := scanner.Text()
+		if isBrowserURLInput(input) {
+			return authCodeResult{}, fmt.Errorf("manual authorization flow uses an out-of-band redirect; paste the authorization code displayed by the browser, not the browser URL")
+		}
+		result, err := parseAuthInput(input)
 		if err != nil {
 			return authCodeResult{}, err
 		}
