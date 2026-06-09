@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -375,12 +376,49 @@ func TestGetAuthCodeResultManualFlowHandlesEOFWithoutInput(t *testing.T) {
 	}
 }
 
+func TestGetAuthCodeResultLinuxUsesManualFlow(t *testing.T) {
+	restore := saveOIDCFlowGlobals()
+	defer restore()
+
+	currentGOOS = "linux"
+	authCodeInputReader = strings.NewReader("test-code\n")
+	automaticFlowCalled := false
+	openBrowserFunc = func(authCodeURL string) error {
+		automaticFlowCalled = true
+		return nil
+	}
+	waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+		automaticFlowCalled = true
+		return authCodeResult{}, fmt.Errorf("automatic callback flow should not be used on linux")
+	}
+
+	conf := &oauthConfig{
+		AuthURL:      "https://issuer.example/auth",
+		RedirectURL:  "http://127.0.0.1:8080",
+		ClientID:     "client-id",
+		State:        "test-state",
+		ResponseType: "code",
+		Scopes:       []string{"openid"},
+	}
+	responseMode := "query"
+
+	result, err := getAuthCodeResult(conf, &responseMode)
+	if err != nil {
+		t.Fatalf("expected linux to use manual auth code flow, got error: %v", err)
+	}
+	if automaticFlowCalled {
+		t.Fatal("expected linux to avoid automatic callback flow")
+	}
+	if result.Code != "test-code" {
+		t.Fatalf("expected manual code to be parsed, got %q", result.Code)
+	}
+}
+
 func TestGetAuthCodeResultAutomaticFlow(t *testing.T) {
 	tests := []struct {
 		os string
 	}{
 		{"darwin"},
-		{"linux"},
 		{"windows"},
 	}
 
