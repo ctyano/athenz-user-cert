@@ -382,7 +382,7 @@ func parseManualAuthCode(raw string) (authCodeResult, error) {
 	if raw == "" {
 		return authCodeResult{}, fmt.Errorf("authorization code is empty")
 	}
-	if isBrowserURLInput(raw) {
+	if isManualURLInput(raw) {
 		return authCodeResult{}, fmt.Errorf("manual authorization flow uses an out-of-band redirect; paste only the authorization code displayed by the browser")
 	}
 
@@ -394,9 +394,9 @@ func parseManualAuthCode(raw string) (authCodeResult, error) {
 	}, nil
 }
 
-func isBrowserURLInput(raw string) bool {
+func isManualURLInput(raw string) bool {
 	parsedURL, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && parsedURL.Scheme != "" && parsedURL.Host != ""
+	return err == nil && parsedURL.Scheme != "" && (parsedURL.Host != "" || parsedURL.Scheme == "urn")
 }
 
 func validateAuthCodeResult(result authCodeResult, expectedState string, required bool) error {

@@ -189,13 +189,18 @@ func TestParseManualAuthCodeHandlesRawCode(t *testing.T) {
 	}
 }
 
-func TestParseManualAuthCodeRejectsBrowserURL(t *testing.T) {
-	_, err := parseManualAuthCode("http://127.0.0.1:5556/dex/auth/local/login?back=&state=jwt75qxgvdinqnmgd2y7j4hch")
-	if err == nil {
-		t.Fatal("expected browser URL input to return an error")
-	}
-	if !strings.Contains(err.Error(), "paste only the authorization code") {
-		t.Fatalf("expected authorization code guidance, got %v", err)
+func TestParseManualAuthCodeRejectsURLInput(t *testing.T) {
+	for _, input := range []string{
+		"http://127.0.0.1:5556/dex/auth/local/login?back=&state=jwt75qxgvdinqnmgd2y7j4hch",
+		"urn:ietf:wg:oauth:2.0:oob?code=test-code&state=test-state",
+	} {
+		_, err := parseManualAuthCode(input)
+		if err == nil {
+			t.Fatalf("expected URL input %q to return an error", input)
+		}
+		if !strings.Contains(err.Error(), "paste only the authorization code") {
+			t.Fatalf("expected authorization code guidance, got %v", err)
+		}
 	}
 }
 
@@ -286,7 +291,7 @@ func TestBuildAuthCodeURLOmitsEmptyResponseMode(t *testing.T) {
 	}
 }
 
-func TestGetAuthCodeResultManualFlowRejectsBrowserURL(t *testing.T) {
+func TestGetAuthCodeResultManualFlowRejectsURLInput(t *testing.T) {
 	restore := saveOIDCFlowGlobals()
 	defer restore()
 
@@ -305,7 +310,7 @@ func TestGetAuthCodeResultManualFlowRejectsBrowserURL(t *testing.T) {
 
 	_, err := getAuthCodeResult(conf, &responseMode)
 	if err == nil {
-		t.Fatal("expected browser URL input to be rejected")
+		t.Fatal("expected URL input to be rejected")
 	}
 	if !strings.Contains(err.Error(), "paste only the authorization code") {
 		t.Fatalf("expected authorization code guidance, got %v", err)
