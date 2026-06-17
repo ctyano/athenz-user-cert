@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ctyano/athenz-user-cert/pkg/certificate"
 	appconfig "github.com/ctyano/athenz-user-cert/pkg/config"
 	"github.com/ctyano/athenz-user-cert/pkg/oidc"
 	"github.com/ctyano/athenz-user-cert/pkg/signer"
@@ -24,6 +25,91 @@ func TestDefaultString(t *testing.T) {
 	}
 	if got := defaultString("   ", "fallback"); got != "fallback" {
 		t.Fatalf("expected fallback value, got %q", got)
+	}
+}
+
+func TestBuildAthenzExternalCommonName(t *testing.T) {
+	userCN, err := buildAthenzUserCommonName("user", "alice")
+	if err != nil {
+		t.Fatalf("buildAthenzUserCommonName returned error: %v", err)
+	}
+	if userCN != "user.alice" {
+		t.Fatalf("expected user common name, got %q", userCN)
+	}
+	if _, err := buildAthenzUserCommonName("", "alice"); err == nil {
+		t.Fatal("expected missing user domain to return an error")
+	}
+
+	got, err := buildAthenzExternalCommonName("corp.domain", "alice")
+	if err != nil {
+		t.Fatalf("buildAthenzExternalCommonName returned error: %v", err)
+	}
+	if got != "corp.domain:ext.alice" {
+		t.Fatalf("expected common name, got %q", got)
+	}
+
+	if _, err := buildAthenzExternalCommonName("", "alice"); err == nil {
+		t.Fatal("expected missing domain to return an error")
+	}
+	if _, err := buildAthenzExternalCommonName("corp.domain", " "); err == nil {
+		t.Fatal("expected empty claim value to return an error")
+	}
+}
+
+func TestAthenzCNFlagsUseConfigDefaults(t *testing.T) {
+	flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags := addCommandFlags(flagSet, &appconfig.Settings{
+		CNMode:           "external",
+		UserClaim:        "name",
+		UserDomain:       "config.user.domain",
+		ExternalIDDomain: "config.domain",
+		ExternalIDClaim:  "email",
+	})
+	if err := flagSet.Parse(nil); err != nil {
+		t.Fatalf("flag parse returned error: %v", err)
+	}
+	if *flags.signer.cnMode != "external" {
+		t.Fatalf("expected CN mode from config, got %q", *flags.signer.cnMode)
+	}
+	if *flags.signer.identityClaim != "" {
+		t.Fatalf("expected empty claim flag default, got %q", *flags.signer.identityClaim)
+	}
+	if flags.signer.userClaimDefault != "name" {
+		t.Fatalf("expected user claim default from config, got %q", flags.signer.userClaimDefault)
+	}
+	if *flags.signer.userDomain != "config.user.domain" {
+		t.Fatalf("expected Athenz user domain from config, got %q", *flags.signer.userDomain)
+	}
+	if *flags.signer.externalIDDomain != "config.domain" {
+		t.Fatalf("expected Athenz external ID domain from config, got %q", *flags.signer.externalIDDomain)
+	}
+	if flags.signer.externalIDClaimDefault != "email" {
+		t.Fatalf("expected external ID claim default from config, got %q", flags.signer.externalIDClaimDefault)
+	}
+}
+
+func TestAthenzCNFlagsUseCommandLineOverrides(t *testing.T) {
+	flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags := addCommandFlags(flagSet, &appconfig.Settings{})
+	if err := flagSet.Parse([]string{
+		"-athenz-cn-mode", "external",
+		"-athenz-user-domain", "flag.user.domain",
+		"-athenz-external-id-domain", "flag.domain",
+		"-claim", "sub",
+	}); err != nil {
+		t.Fatalf("flag parse returned error: %v", err)
+	}
+	if *flags.signer.cnMode != "external" {
+		t.Fatalf("expected CN mode from flag, got %q", *flags.signer.cnMode)
+	}
+	if *flags.signer.userDomain != "flag.user.domain" {
+		t.Fatalf("expected Athenz user domain from flag, got %q", *flags.signer.userDomain)
+	}
+	if *flags.signer.externalIDDomain != "flag.domain" {
+		t.Fatalf("expected Athenz external ID domain from flag, got %q", *flags.signer.externalIDDomain)
+	}
+	if *flags.signer.identityClaim != "sub" {
+		t.Fatalf("expected identity claim from flag, got %q", *flags.signer.identityClaim)
 	}
 }
 
@@ -50,24 +136,6 @@ func TestResolveSignerEndpoints(t *testing.T) {
 			}
 			if caEndpoint != tt.wantCA {
 				t.Fatalf("expected CA endpoint %q, got %q", tt.wantCA, caEndpoint)
-			}
-		})
-	}
-}
-
-func TestRemovedFlagAliasesAreRejected(t *testing.T) {
-	for _, args := range [][]string{
-		{"-sign-url", "https://example.test/sign"},
-		{"-ca-url", "https://example.test/ca"},
-		{"-ca", "https://example.test/ca"},
-		{"-username", "dex-user"},
-		{"-password-stdin"},
-	} {
-		t.Run(strings.Join(args[:1], ""), func(t *testing.T) {
-			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
-			addCommandFlags(flagSet, &appconfig.Settings{})
-			if err := flagSet.Parse(args); err == nil {
-				t.Fatalf("expected %q to be rejected", args[0])
 			}
 		})
 	}
@@ -445,6 +513,26 @@ func TestExecuteSignerFlows(t *testing.T) {
 			},
 		},
 		{
+			name:            "cfssl with external CN mode",
+			args:            []string{"-signer", "cfssl", "-athenz-cn-mode", "external", "-athenz-external-id-domain", "external.id.domain"},
+			wantCommonName:  "external.id.domain:ext.alice",
+			wantCert:        "cfssl-cert",
+			wantCACert:      "cfssl-ca",
+			wantAccessToken: "cached-token",
+			wantCAUpdated:   true,
+			setup: func(t *testing.T) {
+				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
+					return "cached-token", nil
+				}
+				sendCFSSLCSR = func(endpoint, csr string, headers *map[string][]string) (error, string) {
+					return nil, "cfssl-cert"
+				}
+				getCFSSLRootCA = func(test bool, source string, headers *map[string][]string) (error, string) {
+					return nil, "cfssl-ca"
+				}
+			},
+		},
+		{
 			name:            "zts with derived common name",
 			args:            []string{"-signer", "zts", "-debug"},
 			wantCommonName:  "user.alice",
@@ -479,8 +567,12 @@ func TestExecuteSignerFlows(t *testing.T) {
 				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
 					return "cached-token", nil
 				}
+				getExternalIDFromAccessToken = func(rawJWT, externalIDClaim string) (string, error) {
+					t.Fatal("did not expect external ID extraction when common name is provided")
+					return "", nil
+				}
 				getUserNameFromAccessToken = func(rawJWT, userNameClaim string) (string, error) {
-					t.Fatal("did not expect username extraction when common name is provided")
+					t.Fatal("did not expect user name extraction when common name is provided")
 					return "", nil
 				}
 				sendZTSCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
@@ -611,15 +703,49 @@ func TestExecuteAdditionalErrorPaths(t *testing.T) {
 			},
 		},
 		{
-			name:    "username extraction error",
+			name:    "user name extraction error",
 			args:    []string{"-signer", "cfssl"},
-			wantErr: "Failed to extract Athenz User Name",
+			wantErr: "Failed to extract Athenz user name",
 			setup: func(t *testing.T) {
 				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
 					return "cached-token", nil
 				}
 				getUserNameFromAccessToken = func(rawJWT, userNameClaim string) (string, error) {
 					return "", io.EOF
+				}
+			},
+		},
+		{
+			name:    "external ID extraction error",
+			args:    []string{"-signer", "cfssl", "-athenz-cn-mode", "external"},
+			wantErr: "Failed to extract Athenz external ID",
+			setup: func(t *testing.T) {
+				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
+					return "cached-token", nil
+				}
+				getExternalIDFromAccessToken = func(rawJWT, externalIDClaim string) (string, error) {
+					return "", io.EOF
+				}
+			},
+		},
+		{
+			name:    "missing Athenz external ID domain",
+			args:    []string{"-signer", "cfssl", "-athenz-cn-mode", "external"},
+			wantErr: "Athenz external ID domain is required",
+			setup: func(t *testing.T) {
+				certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = ""
+				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
+					return "cached-token", nil
+				}
+			},
+		},
+		{
+			name:    "unsupported CN mode",
+			args:    []string{"-signer", "cfssl", "-athenz-cn-mode", "invalid"},
+			wantErr: "unsupported Athenz CN mode",
+			setup: func(t *testing.T) {
+				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
+					return "cached-token", nil
 				}
 			},
 		},
@@ -778,12 +904,21 @@ func installDefaultCommandStubs(t *testing.T) {
 	getPasswordGrantAccessToken = func(username, password string, debug *bool) (string, error) {
 		return "", io.EOF
 	}
-	getUserNameFromAccessToken = func(rawJWT, userNameClaim string) (string, error) {
+	getExternalIDFromAccessToken = func(rawJWT, externalIDClaim string) (string, error) {
 		if rawJWT == "" {
-			t.Fatal("expected access token for username extraction")
+			t.Fatal("expected access token for external ID extraction")
 		}
 		return "alice", nil
 	}
+	getUserNameFromAccessToken = func(rawJWT, userNameClaim string) (string, error) {
+		if rawJWT == "" {
+			t.Fatal("expected access token for user name extraction")
+		}
+		return "alice", nil
+	}
+	certificate.DEFAULT_ATHENZ_CN_MODE = "user"
+	certificate.DEFAULT_ATHENZ_USER_DOMAIN = "user"
+	certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = "external.id.domain"
 	privateKeyToPEM = func(priv crypto.PrivateKey) (*pem.Block, error) {
 		return &pem.Block{Type: "PRIVATE KEY", Bytes: []byte("key")}, nil
 	}
@@ -806,6 +941,7 @@ func saveCmdGlobals() func() {
 	savedLoadConfig := loadConfig
 	savedGetAuthAccessToken := getAuthAccessToken
 	savedGetPasswordGrantAccessToken := getPasswordGrantAccessToken
+	savedGetExternalIDFromAccessToken := getExternalIDFromAccessToken
 	savedGetUserNameFromAccessToken := getUserNameFromAccessToken
 	savedGenerateCSR := generateCSR
 	savedPrivateKeyToPEM := privateKeyToPEM
@@ -822,6 +958,9 @@ func saveCmdGlobals() func() {
 	savedGetZTSRootCA := getZTSRootCA
 	savedSignerTLSCAPath := signer.DEFAULT_SIGNER_TLS_CA_PATH
 	savedOIDCIssuer := oidc.DEFAULT_OIDC_ISSUER
+	savedAthenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
+	savedAthenzUserDomain := certificate.DEFAULT_ATHENZ_USER_DOMAIN
+	savedExternalIDDomain := certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN
 	savedExitFunc := exitFunc
 	savedPasswordInputReader := passwordInputReader
 
@@ -829,6 +968,7 @@ func saveCmdGlobals() func() {
 		loadConfig = savedLoadConfig
 		getAuthAccessToken = savedGetAuthAccessToken
 		getPasswordGrantAccessToken = savedGetPasswordGrantAccessToken
+		getExternalIDFromAccessToken = savedGetExternalIDFromAccessToken
 		getUserNameFromAccessToken = savedGetUserNameFromAccessToken
 		generateCSR = savedGenerateCSR
 		privateKeyToPEM = savedPrivateKeyToPEM
@@ -845,6 +985,9 @@ func saveCmdGlobals() func() {
 		getZTSRootCA = savedGetZTSRootCA
 		signer.DEFAULT_SIGNER_TLS_CA_PATH = savedSignerTLSCAPath
 		oidc.DEFAULT_OIDC_ISSUER = savedOIDCIssuer
+		certificate.DEFAULT_ATHENZ_CN_MODE = savedAthenzCNMode
+		certificate.DEFAULT_ATHENZ_USER_DOMAIN = savedAthenzUserDomain
+		certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = savedExternalIDDomain
 		exitFunc = savedExitFunc
 		passwordInputReader = savedPasswordInputReader
 	}

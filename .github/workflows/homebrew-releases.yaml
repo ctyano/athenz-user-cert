@@ -119,5 +119,7 @@ jobs:
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          HOMEBREW_TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER || github.repository_owner }}
+          HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY || github.event.repository.name }}
           # https://github.com/goreleaser/goreleaser/tags
           VERSION: v1.26.2

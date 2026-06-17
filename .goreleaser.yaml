@@ -24,14 +24,14 @@ builds:
 archives:
   - id: homebrew
     format: zip
-# https://github.com/goreleaser/goreleaser/blob/v1.13.1/www/docs/customization/homebrew.md
-# curl -sL https://git.io/goreleaser | VERSION=v1.13.1 GITHUB_TOKEN=<GITHUB_TOKEN> bash 
+# GoReleaser publishes formulae to <owner>/<repository>.
+# This project currently uses the source repository itself as the tap repository via `brew tap <owner>/athenz-user-cert https://github.com/<owner>/athenz-user-cert`.
 brews:
-  - tap:
-      owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
-      name: athenz-user-cert
+  - repository:
+      owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
+      name: "{{ .Env.HOMEBREW_TAP_REPOSITORY }}"
     name: athenz-user-cert
-    folder: Formula
+    directory: Formula
     homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
     description: CLI to retrieve Athenz-compatible User Certificate
     ids:

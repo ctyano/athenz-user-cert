@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/ctyano/athenz-user-cert/pkg/certificate"
 	"github.com/ctyano/athenz-user-cert/pkg/oidc"
 	"github.com/ctyano/athenz-user-cert/pkg/signer"
 )
@@ -30,8 +31,12 @@ func ExecuteVersionCommand(arg []string, versionFlagSet *flag.FlagSet) {
 	fmt.Printf("  CLI Open ID Connect Access Token Stored Path: $HOME/%s\n", oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH)
 	fmt.Printf("  CLI Open ID Connect Access Token Cache Validation: JWT exp claim\n")
 	fmt.Printf("  CLI Open ID Connect Access Token User Name JWT Claim: %s\n", oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM)
+	fmt.Printf("  CLI Open ID Connect Access Token External ID JWT Claim: %s\n", oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM)
 
 	fmt.Printf("CLI X.509 configuration:\n")
+	fmt.Printf("  CLI X.509 Athenz CN Mode: %s\n", certificate.DEFAULT_ATHENZ_CN_MODE)
+	fmt.Printf("  CLI X.509 Athenz User Domain: %s\n", certificate.DEFAULT_ATHENZ_USER_DOMAIN)
+	fmt.Printf("  CLI X.509 Athenz External ID Domain: %s\n", certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN)
 	fmt.Printf("  CLI X.509 Signer TLS CA Path: %s\n", signer.DEFAULT_SIGNER_TLS_CA_PATH)
 	fmt.Printf("  CLI X.509 configuration for Crypki:\n")
 	fmt.Printf("    CLI X.509 Certificate Signer URL: %s\n", signer.DEFAULT_SIGNER_CRYPKI_SIGN_URL)

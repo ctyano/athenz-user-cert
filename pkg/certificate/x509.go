@@ -17,9 +17,11 @@ import (
 )
 
 var (
-	DEFAULT_X509_USERCERT_PATH = "/.athenz/user.cert.pem"
-	DEFAULT_X509_CACERT_PATH   = "/.athenz/ca.cert.pem"
-	DEFAULT_ATHENZ_USER_PREFIX = "user."
+	DEFAULT_X509_USERCERT_PATH        = "/.athenz/user.cert.pem"
+	DEFAULT_X509_CACERT_PATH          = "/.athenz/ca.cert.pem"
+	DEFAULT_ATHENZ_CN_MODE            = "user"
+	DEFAULT_ATHENZ_USER_DOMAIN        = "user"
+	DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = ""
 )
 
 type X509Options struct {

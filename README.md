@@ -14,13 +14,22 @@ This certificate is compatible with Athenz and can be used to authenticate the u
 
 ## How to install
 
-```
-brew tap ctyano/athenz-user-cert https://github.com/ctyano/athenz-user-cert
-```
+Install from the community Homebrew tap:
 
 ```
+brew tap athenz-community/athenz-user-cert https://github.com/athenz-community/athenz-user-cert
+brew install athenz-community/athenz-user-cert/athenz-user-cert
+```
+
+Or install from the personal Homebrew tap:
+
+```
+brew tap ctyano/athenz-user-cert https://github.com/ctyano/athenz-user-cert
 brew install ctyano/athenz-user-cert/athenz-user-cert
 ```
+
+Homebrew formulae are published by GoReleaser to this repository's `Formula` directory.
+The explicit tap URL is required because this project does not use a separate `homebrew-athenz-user-cert` tap repository.
 
 ## List of Distributions
 
@@ -55,6 +64,11 @@ Example:
 signer:
   name: zts
 
+athenz:
+  cn_mode: user
+  user_domain: user
+  external_id_domain: external.id.domain
+
 endpoint: https://zts.example.com/zts/v1/usercert
 ca_endpoint: https://zts.example.com/zts/v1/ca
 signer_tls_ca_path: /usr/local/etc/athenz/zts-server-ca.pem
@@ -64,7 +78,7 @@ oidc:
   client_id: athenz-user-cert
   scopes: openid email profile
   listen_address: :8080
-  username_claim: email
+  external_id_claim: email
 
 zts:
   timeout: 10
@@ -72,7 +86,11 @@ zts:
 
 Common environment variable overrides include `ATHENZ_API_URL`,
 `ATHENZ_CA_ENDPOINT`, `ATHENZ_SIGNER_TLS_CA_PATH`, `ATHENZ_OIDC_ISSUER`, and
-`ATHENZ_ZTS_SIGN_URL`.
+`ATHENZ_ZTS_SIGN_URL`. Use `ATHENZ_CN_MODE` to choose the derived Athenz User
+Certificate CN mode: `user` produces `<user_domain>.<username>`, and `external`
+produces `<external_id_domain>:ext.<external_id>`. Use `ATHENZ_USER_DOMAIN` for
+user mode. Use `ATHENZ_EXTERNAL_ID_DOMAIN` and `ATHENZ_EXTERNAL_ID_CLAIM` for
+external mode.
 
 Use `-oidc-issuer https://issuer.example.com` to override the OIDC issuer for a
 single CLI execution.

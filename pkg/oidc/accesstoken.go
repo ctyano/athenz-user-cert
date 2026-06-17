@@ -24,13 +24,14 @@ import (
 const oidcOutOfBandRedirectURL = "urn:ietf:wg:oauth:2.0:oob"
 
 var (
-	DEFAULT_OIDC_CLIENT_ID             = "athenz-user-cert"
-	DEFAULT_OIDC_CLIENT_SECRET         = "athenz-user-cert"
-	DEFAULT_OIDC_ISSUER                = "http://127.0.0.1:5556/dex"
-	DEFAULT_OIDC_SCOPES                = "openid email profile"
-	DEFAULT_OIDC_LISTEN_ADDRESS        = ":8080"
-	DEFAULT_OIDC_ACCESS_TOKEN_PATH     = ".athenz/.accesstoken"
-	DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM = "name"
+	DEFAULT_OIDC_CLIENT_ID                = "athenz-user-cert"
+	DEFAULT_OIDC_CLIENT_SECRET            = "athenz-user-cert"
+	DEFAULT_OIDC_ISSUER                   = "http://127.0.0.1:5556/dex"
+	DEFAULT_OIDC_SCOPES                   = "openid email profile"
+	DEFAULT_OIDC_LISTEN_ADDRESS           = ":8080"
+	DEFAULT_OIDC_ACCESS_TOKEN_PATH        = ".athenz/.accesstoken"
+	DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM = "name"
+	DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM    = "name"
 
 	currentGOOS                   = runtime.GOOS
 	authCodeInputReader io.Reader = os.Stdin
@@ -674,21 +675,29 @@ func authCodeResultFromRequest(r *http.Request) (authCodeResult, error) {
 	}, nil
 }
 
+func GetExternalIDFromAccessToken(rawJWT, externalIDClaim string) (string, error) {
+	return getStringClaimFromAccessToken(rawJWT, externalIDClaim, DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM)
+}
+
 func GetUserNameFromAccessToken(rawJWT, userNameClaim string) (string, error) {
+	return getStringClaimFromAccessToken(rawJWT, userNameClaim, DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM)
+}
+
+func getStringClaimFromAccessToken(rawJWT, claimName, defaultClaimName string) (string, error) {
 	claims, err := parseJWTClaims(rawJWT)
 	if err != nil {
 		return "", err
 	}
 
-	var userClaim string
-	if userNameClaim != "" {
-		userClaim = userNameClaim
+	var claim string
+	if claimName != "" {
+		claim = claimName
 	} else {
-		userClaim = DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM
+		claim = defaultClaimName
 	}
-	name, ok := claims[userClaim].(string)
+	value, ok := claims[claim].(string)
 	if !ok {
-		return "", fmt.Errorf("no %s claim in jwt", userClaim)
+		return "", fmt.Errorf("no %s claim in jwt", claim)
 	}
-	return name, nil
+	return value, nil
 }

@@ -267,6 +267,30 @@ func TestGetUserNameFromAccessToken(t *testing.T) {
 	}
 }
 
+func TestGetExternalIDFromAccessToken(t *testing.T) {
+	token := makeTestJWT(t, map[string]any{
+		"exp":   9999999999,
+		"name":  "alice",
+		"email": "alice@example.com",
+	})
+
+	got, err := GetExternalIDFromAccessToken(token, "email")
+	if err != nil {
+		t.Fatalf("GetExternalIDFromAccessToken returned error: %v", err)
+	}
+	if got != "alice@example.com" {
+		t.Fatalf("expected email claim, got %q", got)
+	}
+
+	got, err = GetExternalIDFromAccessToken(token, "")
+	if err != nil {
+		t.Fatalf("GetExternalIDFromAccessToken returned error for default claim: %v", err)
+	}
+	if got != "alice" {
+		t.Fatalf("expected default name claim, got %q", got)
+	}
+}
+
 func TestGetUserNameFromAccessTokenRejectsMissingClaim(t *testing.T) {
 	token := makeTestJWT(t, map[string]any{
 		"exp":  9999999999,

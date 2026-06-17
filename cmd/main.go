@@ -19,25 +19,26 @@ var (
 	DEFAULT_APP_NAME    = "athenzusercert"
 	DEFAULT_SIGNER_NAME = "zts"
 
-	loadConfig                  = appconfig.Load
-	getAuthAccessToken          = oidc.GetAuthAccessToken
-	getPasswordGrantAccessToken = oidc.GetPasswordGrantAccessToken
-	getUserNameFromAccessToken  = oidc.GetUserNameFromAccessToken
-	generateCSR                 = certificate.GenerateCSR
-	privateKeyToPEM             = certificate.PrivateKeyToPEM
-	writePEMFile                = certificate.WritePEM
-	userKeyPath                 = certificate.UserKeyPath
-	userCertPath                = certificate.UserCertPath
-	caCertPath                  = certificate.CACertPath
-	writeOutputFile             = os.WriteFile
-	sendCrypkiCSR               = signer.SendCrypkiCSR
-	getCrypkiRootCA             = signer.GetCrypkiRootCA
-	sendCFSSLCSR                = signer.SendCFSSLCSR
-	getCFSSLRootCA              = signer.GetCFSSLRootCA
-	sendZTSCSR                  = signer.SendZTSCSR
-	getZTSRootCA                = signer.GetZTSRootCA
-	exitFunc                    = os.Exit
-	passwordInputReader         = io.Reader(os.Stdin)
+	loadConfig                   = appconfig.Load
+	getAuthAccessToken           = oidc.GetAuthAccessToken
+	getPasswordGrantAccessToken  = oidc.GetPasswordGrantAccessToken
+	getExternalIDFromAccessToken = oidc.GetExternalIDFromAccessToken
+	getUserNameFromAccessToken   = oidc.GetUserNameFromAccessToken
+	generateCSR                  = certificate.GenerateCSR
+	privateKeyToPEM              = certificate.PrivateKeyToPEM
+	writePEMFile                 = certificate.WritePEM
+	userKeyPath                  = certificate.UserKeyPath
+	userCertPath                 = certificate.UserCertPath
+	caCertPath                   = certificate.CACertPath
+	writeOutputFile              = os.WriteFile
+	sendCrypkiCSR                = signer.SendCrypkiCSR
+	getCrypkiRootCA              = signer.GetCrypkiRootCA
+	sendCFSSLCSR                 = signer.SendCFSSLCSR
+	getCFSSLRootCA               = signer.GetCFSSLRootCA
+	sendZTSCSR                   = signer.SendZTSCSR
+	getZTSRootCA                 = signer.GetZTSRootCA
+	exitFunc                     = os.Exit
+	passwordInputReader          = io.Reader(os.Stdin)
 )
 
 func main() {
@@ -108,7 +109,7 @@ Options:
 		fmt.Fprintf(stdout, "Access Token retrieved Successfully:\n%s\n", accesstoken)
 	}
 
-	if err := setCommonNameFromAccessToken(accesstoken, flags.signer.commonName, flags.signer.userNameClaim, flags.signer.debug, stdout); err != nil {
+	if err := setCommonNameFromAccessToken(accesstoken, flags.signer, stdout); err != nil {
 		return err
 	}
 
@@ -216,13 +217,18 @@ Options:
 }
 
 type signerCommandFlags struct {
-	signerName      *string
-	endpoint        *string
-	caEndpoint      *string
-	signerTLSCAPath *string
-	commonName      *string
-	userNameClaim   *string
-	debug           *bool
+	signerName             *string
+	endpoint               *string
+	caEndpoint             *string
+	signerTLSCAPath        *string
+	commonName             *string
+	cnMode                 *string
+	identityClaim          *string
+	userDomain             *string
+	externalIDDomain       *string
+	userClaimDefault       string
+	externalIDClaimDefault string
+	debug                  *bool
 }
 
 type mainCommandFlags struct {
@@ -254,13 +260,18 @@ func addCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings) mainCommand
 
 func addSignerCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings, certType string) signerCommandFlags {
 	return signerCommandFlags{
-		signerName:      flagSet.String("signer", defaultString(cfg.SignerName, DEFAULT_SIGNER_NAME), "Name for the certificate signer product (\"crypki\", \"cfssl\" or \"zts\")"),
-		endpoint:        flagSet.String("endpoint", cfg.Endpoint, "Target destination URL to send the certificate sign request (leave it empty to use default)"),
-		caEndpoint:      flagSet.String("ca-endpoint", cfg.CAEndpoint, "Target destination API endpoint to retrieve the signer-issued CA certificate (leave it empty to use default)"),
-		signerTLSCAPath: flagSet.String("signer-tls-ca", defaultString(cfg.SignerTLSCAPath, signer.DefaultSignerTLSCAPath()), "Local PEM path for the CA used to verify the signer server TLS certificate"),
-		commonName:      flagSet.String("cn", "", fmt.Sprintf("Subject Common Name for the %s certificate (default: \"<athenz user prefix>.<oauth user name>\")", certType)),
-		userNameClaim:   flagSet.String("claim", defaultString(cfg.UserClaim, oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM), "JWT Claim Name to extract the user name"),
-		debug:           flagSet.Bool("debug", false, "Print the access token to send the Certificate Siginig Request"),
+		signerName:             flagSet.String("signer", defaultString(cfg.SignerName, DEFAULT_SIGNER_NAME), "Name for the certificate signer product (\"crypki\", \"cfssl\" or \"zts\")"),
+		endpoint:               flagSet.String("endpoint", cfg.Endpoint, "Target destination URL to send the certificate sign request (leave it empty to use default)"),
+		caEndpoint:             flagSet.String("ca-endpoint", cfg.CAEndpoint, "Target destination API endpoint to retrieve the signer-issued CA certificate (leave it empty to use default)"),
+		signerTLSCAPath:        flagSet.String("signer-tls-ca", defaultString(cfg.SignerTLSCAPath, signer.DefaultSignerTLSCAPath()), "Local PEM path for the CA used to verify the signer server TLS certificate"),
+		commonName:             flagSet.String("cn", "", fmt.Sprintf("Athenz User Certificate CN for the %s certificate (default depends on -athenz-cn-mode)", certType)),
+		cnMode:                 flagSet.String("athenz-cn-mode", defaultString(cfg.CNMode, certificate.DEFAULT_ATHENZ_CN_MODE), "Athenz User Certificate CN derivation mode (\"user\" or \"external\")"),
+		identityClaim:          flagSet.String("claim", "", "JWT Claim Name used to derive the Athenz User Certificate CN (mode-specific default if empty)"),
+		userDomain:             flagSet.String("athenz-user-domain", defaultString(cfg.UserDomain, certificate.DEFAULT_ATHENZ_USER_DOMAIN), "Athenz user domain for the derived Athenz User Certificate CN"),
+		externalIDDomain:       flagSet.String("athenz-external-id-domain", defaultString(cfg.ExternalIDDomain, certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN), "Athenz external ID domain for the derived Athenz User Certificate CN"),
+		userClaimDefault:       defaultString(cfg.UserClaim, oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM),
+		externalIDClaimDefault: defaultString(cfg.ExternalIDClaim, oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM),
+		debug:                  flagSet.Bool("debug", false, "Print the access token to send the Certificate Siginig Request"),
 	}
 }
 
@@ -361,17 +372,80 @@ func prepareSignerConfig(flags signerCommandFlags, stdout io.Writer) {
 	}
 }
 
-func setCommonNameFromAccessToken(accessToken string, commonName, userNameClaim *string, debug *bool, stdout io.Writer) error {
-	if *commonName != "" {
+func setCommonNameFromAccessToken(accessToken string, flags signerCommandFlags, stdout io.Writer) error {
+	if *flags.commonName != "" {
 		return nil
 	}
-	username, err := getUserNameFromAccessToken(accessToken, *userNameClaim)
+	mode, err := resolveAthenzCNMode(*flags.cnMode)
 	if err != nil {
-		return fmt.Errorf("Failed to extract Athenz User Name from Access Token: %v", err)
+		return err
 	}
-	*commonName = certificate.DEFAULT_ATHENZ_USER_PREFIX + username
-	if *debug {
-		fmt.Fprintf(stdout, "Athenz User Name is: %s\n", *commonName)
+
+	var cn string
+	switch mode {
+	case athenzCNModeUser:
+		claim := defaultString(*flags.identityClaim, flags.userClaimDefault)
+		username, err := getUserNameFromAccessToken(accessToken, claim)
+		if err != nil {
+			return fmt.Errorf("Failed to extract Athenz user name from Access Token: %v", err)
+		}
+		cn, err = buildAthenzUserCommonName(*flags.userDomain, username)
+		if err != nil {
+			return err
+		}
+	case athenzCNModeExternal:
+		claim := defaultString(*flags.identityClaim, flags.externalIDClaimDefault)
+		externalIDValue, err := getExternalIDFromAccessToken(accessToken, claim)
+		if err != nil {
+			return fmt.Errorf("Failed to extract Athenz external ID from Access Token: %v", err)
+		}
+		cn, err = buildAthenzExternalCommonName(*flags.externalIDDomain, externalIDValue)
+		if err != nil {
+			return err
+		}
+	}
+	*flags.commonName = cn
+	if *flags.debug {
+		fmt.Fprintf(stdout, "Athenz User Certificate CN is: %s\n", *flags.commonName)
 	}
 	return nil
+}
+
+const (
+	athenzCNModeUser     = "user"
+	athenzCNModeExternal = "external"
+)
+
+func resolveAthenzCNMode(mode string) (string, error) {
+	mode = strings.ToLower(strings.TrimSpace(defaultString(mode, certificate.DEFAULT_ATHENZ_CN_MODE)))
+	switch mode {
+	case athenzCNModeUser, athenzCNModeExternal:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unsupported Athenz CN mode %q (supported: %q or %q)", mode, athenzCNModeUser, athenzCNModeExternal)
+	}
+}
+
+func buildAthenzUserCommonName(userDomain, username string) (string, error) {
+	userDomain = strings.TrimSpace(userDomain)
+	username = strings.TrimSpace(username)
+	if userDomain == "" {
+		return "", fmt.Errorf("Athenz user domain is required to derive Athenz User Certificate CN")
+	}
+	if username == "" {
+		return "", fmt.Errorf("Athenz user name claim value is empty")
+	}
+	return userDomain + "." + username, nil
+}
+
+func buildAthenzExternalCommonName(domain, claimValue string) (string, error) {
+	domain = strings.TrimSpace(domain)
+	claimValue = strings.TrimSpace(claimValue)
+	if domain == "" {
+		return "", fmt.Errorf("Athenz external ID domain is required to derive Athenz User Certificate CN")
+	}
+	if claimValue == "" {
+		return "", fmt.Errorf("Athenz external ID claim value is empty")
+	}
+	return domain + ":ext." + claimValue, nil
 }
