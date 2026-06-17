@@ -2,6 +2,7 @@ package signer
 
 import (
 	"bytes"
+	"crypto"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,11 +81,20 @@ func SendZTSCSR(name string, url string, csr string, attestationData string, sig
 
 // GetZTSRootCA returns the signer-issued CA bundle from a remote endpoint.
 func GetZTSRootCA(test bool, source string, headers *map[string][]string) (error, string) {
+	return getZTSRootCA(test, source, DefaultSignerTLSCAPath(), "", nil, headers)
+}
+
+// GetZTSRootCAWithClientCert returns the signer-issued CA bundle using the previously issued client certificate for mTLS.
+func GetZTSRootCAWithClientCert(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
+	return getZTSRootCA(test, source, signerTLSCAPath, clientCertPEM, privateKey, headers)
+}
+
+func getZTSRootCA(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
 	if strings.TrimSpace(source) == "" {
 		return nil, ""
 	}
 
-	client, err := newSignerHTTPClient(DEFAULT_SIGNER_ZTS_TIMEOUT, DefaultSignerTLSCAPath())
+	client, err := newSignerHTTPClientWithClientCert(DEFAULT_SIGNER_ZTS_TIMEOUT, signerTLSCAPath, clientCertPEM, privateKey)
 	if err != nil {
 		return err, ""
 	}

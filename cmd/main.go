@@ -36,7 +36,7 @@ var (
 	sendCFSSLCSR                 = signer.SendCFSSLCSR
 	getCFSSLRootCA               = signer.GetCFSSLRootCA
 	sendZTSCSR                   = signer.SendZTSCSR
-	getZTSRootCA                 = signer.GetZTSRootCA
+	getZTSRootCA                 = signer.GetZTSRootCAWithClientCert
 	exitFunc                     = os.Exit
 	passwordInputReader          = io.Reader(os.Stdin)
 )
@@ -172,7 +172,7 @@ Options:
 		if *flags.signer.debug {
 			fmt.Fprintf(stdout, "Signed certificate:\n%s\n", cert)
 		}
-		err, cacert = getZTSRootCA(false, *flags.signer.caEndpoint, nil)
+		err, cacert = getZTSRootCA(false, *flags.signer.caEndpoint, *flags.signer.signerTLSCAPath, cert, *key, nil)
 		if err != nil {
 			return fmt.Errorf("Failed to get ca certificate: %v", err)
 		}

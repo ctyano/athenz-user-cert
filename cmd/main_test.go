@@ -306,9 +306,15 @@ func TestExecutePasswordGrant(t *testing.T) {
 			}
 			return nil, "cert"
 		}
-		getZTSRootCA = func(test bool, source string, headers *map[string][]string) (error, string) {
+		getZTSRootCA = func(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
 			if test {
 				t.Fatal("expected non-test CA retrieval after certificate issuance")
+			}
+			if clientCertPEM != "cert" {
+				t.Fatalf("expected signed certificate for mTLS, got %q", clientCertPEM)
+			}
+			if privateKey == nil {
+				t.Fatal("expected private key for mTLS")
 			}
 			return nil, "ca"
 		}
@@ -550,7 +556,13 @@ func TestExecuteSignerFlows(t *testing.T) {
 					}
 					return nil, "zts-cert"
 				}
-				getZTSRootCA = func(test bool, source string, headers *map[string][]string) (error, string) {
+				getZTSRootCA = func(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
+					if clientCertPEM != "zts-cert" {
+						t.Fatalf("expected signed certificate for mTLS, got %q", clientCertPEM)
+					}
+					if privateKey == nil {
+						t.Fatal("expected private key for mTLS")
+					}
 					return nil, ""
 				}
 			},
@@ -581,7 +593,13 @@ func TestExecuteSignerFlows(t *testing.T) {
 					}
 					return nil, "zts-cert"
 				}
-				getZTSRootCA = func(test bool, source string, headers *map[string][]string) (error, string) {
+				getZTSRootCA = func(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
+					if clientCertPEM != "zts-cert" {
+						t.Fatalf("expected signed certificate for mTLS, got %q", clientCertPEM)
+					}
+					if privateKey == nil {
+						t.Fatal("expected private key for mTLS")
+					}
 					return nil, "zts-ca"
 				}
 			},
@@ -934,7 +952,9 @@ func installDefaultCommandStubs(t *testing.T) {
 	sendZTSCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
 		return io.EOF, ""
 	}
-	getZTSRootCA = func(test bool, source string, headers *map[string][]string) (error, string) { return io.EOF, "" }
+	getZTSRootCA = func(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
+		return io.EOF, ""
+	}
 }
 
 func saveCmdGlobals() func() {
