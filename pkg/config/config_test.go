@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ctyano/athenz-user-cert/pkg/certificate"
 	"github.com/ctyano/athenz-user-cert/pkg/oidc"
 	"github.com/ctyano/athenz-user-cert/pkg/signer"
 )
@@ -22,9 +23,14 @@ signer:
 endpoint: https://config.example/zts/v1/usercert
 ca_endpoint: https://config.example/zts/v1/ca
 signer_tls_ca_path: ~/ca.pem
+athenz:
+  cn_mode: external
+  user_domain: config.user.domain
+  external_id_domain: config.external.domain
 oidc:
   issuer: https://issuer.config.example
-  username_claim: email
+  username_claim: name
+  external_id_claim: email
 zts:
   sign_url: https://zts.config.example/zts/v1/usercert
   ca_endpoint: https://zts.config.example/zts/v1/ca
@@ -58,11 +64,38 @@ zts:
 	if settings.OIDCIssuer != "https://issuer.config.example" {
 		t.Fatalf("expected oidc issuer from config, got %q", settings.OIDCIssuer)
 	}
-	if settings.UserClaim != "email" {
+	if settings.CNMode != "external" {
+		t.Fatalf("expected CN mode from config, got %q", settings.CNMode)
+	}
+	if settings.UserClaim != "name" {
 		t.Fatalf("expected user claim from config, got %q", settings.UserClaim)
+	}
+	if settings.UserDomain != "config.user.domain" {
+		t.Fatalf("expected Athenz user domain from config, got %q", settings.UserDomain)
+	}
+	if settings.ExternalIDClaim != "email" {
+		t.Fatalf("expected external ID claim from config, got %q", settings.ExternalIDClaim)
+	}
+	if settings.ExternalIDDomain != "config.external.domain" {
+		t.Fatalf("expected Athenz external ID domain from config, got %q", settings.ExternalIDDomain)
 	}
 	if oidc.DEFAULT_OIDC_ISSUER != "https://issuer.config.example" {
 		t.Fatalf("expected oidc issuer from config, got %q", oidc.DEFAULT_OIDC_ISSUER)
+	}
+	if oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM != "email" {
+		t.Fatalf("expected external ID claim default from config, got %q", oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM)
+	}
+	if oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM != "name" {
+		t.Fatalf("expected user claim default from config, got %q", oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM)
+	}
+	if certificate.DEFAULT_ATHENZ_CN_MODE != "external" {
+		t.Fatalf("expected Athenz CN mode default from config, got %q", certificate.DEFAULT_ATHENZ_CN_MODE)
+	}
+	if certificate.DEFAULT_ATHENZ_USER_DOMAIN != "config.user.domain" {
+		t.Fatalf("expected Athenz user domain default from config, got %q", certificate.DEFAULT_ATHENZ_USER_DOMAIN)
+	}
+	if certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN != "config.external.domain" {
+		t.Fatalf("expected Athenz external ID domain default from config, got %q", certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN)
 	}
 	if signer.DEFAULT_SIGNER_ZTS_SIGN_URL != "https://zts.env.example/zts/v1/usercert" {
 		t.Fatalf("expected zts sign url from env, got %q", signer.DEFAULT_SIGNER_ZTS_SIGN_URL)
@@ -155,7 +188,11 @@ func saveDefaults() func() {
 	oidcScopes := oidc.DEFAULT_OIDC_SCOPES
 	oidcListenAddress := oidc.DEFAULT_OIDC_LISTEN_ADDRESS
 	oidcAccessTokenPath := oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH
+	oidcExternalIDClaim := oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM
 	oidcUsernameClaim := oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM
+	athenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
+	athenzUserDomain := certificate.DEFAULT_ATHENZ_USER_DOMAIN
+	externalIDDomain := certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN
 
 	crypkiSignURL := signer.DEFAULT_SIGNER_CRYPKI_SIGN_URL
 	crypkiCAURL := signer.DEFAULT_SIGNER_CRYPKI_CA_URL
@@ -179,7 +216,11 @@ func saveDefaults() func() {
 		oidc.DEFAULT_OIDC_SCOPES = oidcScopes
 		oidc.DEFAULT_OIDC_LISTEN_ADDRESS = oidcListenAddress
 		oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH = oidcAccessTokenPath
+		oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM = oidcExternalIDClaim
 		oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM = oidcUsernameClaim
+		certificate.DEFAULT_ATHENZ_CN_MODE = athenzCNMode
+		certificate.DEFAULT_ATHENZ_USER_DOMAIN = athenzUserDomain
+		certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = externalIDDomain
 
 		signer.DEFAULT_SIGNER_CRYPKI_SIGN_URL = crypkiSignURL
 		signer.DEFAULT_SIGNER_CRYPKI_CA_URL = crypkiCAURL
