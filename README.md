@@ -14,13 +14,22 @@ This certificate is compatible with Athenz and can be used to authenticate the u
 
 ## How to install
 
-```
-brew tap ctyano/athenz-user-cert https://github.com/ctyano/athenz-user-cert
-```
+Install from the community Homebrew tap:
 
 ```
+brew tap athenz-community/athenz-user-cert https://github.com/athenz-community/athenz-user-cert
+brew install athenz-community/athenz-user-cert/athenz-user-cert
+```
+
+Or install from the personal Homebrew tap:
+
+```
+brew tap ctyano/athenz-user-cert https://github.com/ctyano/athenz-user-cert
 brew install ctyano/athenz-user-cert/athenz-user-cert
 ```
+
+Homebrew formulae are published by GoReleaser to this repository's `Formula` directory.
+The explicit tap URL is required because this project does not use a separate `homebrew-athenz-user-cert` tap repository.
 
 ## List of Distributions
 
