@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -97,7 +98,9 @@ Options:
 	if err := flagSet.Parse(args); err != nil {
 		return err
 	}
-	applyOIDCFlagOverrides(flags)
+	if err := applyOIDCFlagOverrides(flags); err != nil {
+		return err
+	}
 
 	var accesstoken string
 	var err error
@@ -282,10 +285,24 @@ func defaultString(value, fallback string) string {
 	return fallback
 }
 
-func applyOIDCFlagOverrides(flags mainCommandFlags) {
-	if flags.oidcIssuer != nil {
-		oidc.DEFAULT_OIDC_ISSUER = strings.TrimSpace(*flags.oidcIssuer)
+func applyOIDCFlagOverrides(flags mainCommandFlags) error {
+	if flags.oidcIssuer == nil {
+		return nil
 	}
+
+	issuer := strings.TrimSpace(*flags.oidcIssuer)
+	if issuer == "" {
+		return fmt.Errorf("OIDC issuer URL cannot be empty")
+	}
+	parsed, err := url.Parse(issuer)
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("invalid OIDC issuer URL: %s", issuer)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("invalid OIDC issuer URL scheme: %s (must start with http:// or https://)", issuer)
+	}
+	oidc.DEFAULT_OIDC_ISSUER = issuer
+	return nil
 }
 
 func getCommandAccessToken(flags mainCommandFlags) (string, error) {
