@@ -22,7 +22,10 @@ func newSignerHTTPClient(timeoutValue, signerTLSCAPath string) (*http.Client, er
 }
 
 func newSignerHTTPClientWithClientCert(timeoutValue, signerTLSCAPath, clientCertPEM string, privateKey crypto.PrivateKey) (*http.Client, error) {
-	timeout, _ := strconv.Atoi(strings.TrimSpace(timeoutValue))
+	timeout, err := strconv.Atoi(strings.TrimSpace(timeoutValue))
+	if err != nil || timeout <= 0 {
+		timeout = 10
+	}
 	client := &http.Client{
 		Timeout: time.Duration(timeout) * time.Second,
 	}
