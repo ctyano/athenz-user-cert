@@ -27,7 +27,7 @@ env:
   DOCKER_TARGET_PLATFORMS: linux/amd64,linux/arm64
   DOCKER_BUILD_ARGS: |
     VERSION=0.0.0
-  TRACKING_GIT_REPO: proxy-wasm/proxy-wasm-go-sdk
+  TRACKING_GIT_REPO: AthenZ/athenz
 
 jobs:
   build:
