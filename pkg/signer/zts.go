@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+
+	athenzzts "github.com/AthenZ/athenz/clients/go/zts"
 )
 
 var (
@@ -17,66 +20,25 @@ var (
 )
 
 // SendZTSCSR sends a CSR to the Athenz ZTS user certificate endpoint.
-func SendZTSCSR(name string, url string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
-	type RequestBody struct {
-		Name            string `json:"name"`
-		CSR             string `json:"csr"`
-		AttestationData string `json:"attestationData"`
-	}
-
-	body := RequestBody{
-		Name:            name,
-		CSR:             csr,
-		AttestationData: attestationData,
-	}
-
-	jsonData, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("Failed to marshal JSON: %s", err), ""
-	}
-
-	client, err := newSignerHTTPClient(DEFAULT_SIGNER_ZTS_TIMEOUT, signerTLSCAPath)
+func SendZTSCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+	client, err := newZTSClient(ztsBaseURLFromUserCertEndpoint(endpoint), DEFAULT_SIGNER_ZTS_TIMEOUT, signerTLSCAPath, "", nil, headers)
 	if err != nil {
 		return err, ""
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	userCert, err := client.PostUserCertificateRequest(&athenzzts.UserCertificateRequest{
+		Name:            name,
+		Csr:             csr,
+		AttestationData: attestationData,
+	})
 	if err != nil {
-		return fmt.Errorf("Failed to create request: %s", err), ""
+		return formatZTSClientError(err, endpoint), ""
+	}
+	if userCert == nil {
+		return fmt.Errorf("Failed to parse JSON response: empty user certificate response"), ""
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	if headers != nil {
-		for key, values := range *headers {
-			for _, value := range values {
-				req.Header.Add(key, value)
-			}
-		}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		if strings.Contains(err.Error(), "x509: certificate signed by unknown authority") {
-			return fmt.Errorf("Failed to send request: %s (set -signer-tls-ca to the signer server CA PEM path if this is the first direct ZTS request)", err), ""
-		}
-		return fmt.Errorf("Failed to send request: %s", err), ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, strings.TrimSpace(string(body))), ""
-	}
-
-	var response struct {
-		X509Certificate string `json:"x509Certificate"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return fmt.Errorf("Failed to parse JSON response: %w", err), ""
-	}
-
-	return nil, response.X509Certificate
+	return nil, userCert.X509Certificate
 }
 
 // GetZTSRootCA returns the signer-issued CA bundle from a remote endpoint.
@@ -94,6 +56,33 @@ func getZTSRootCA(test bool, source string, signerTLSCAPath string, clientCertPE
 		return nil, ""
 	}
 
+	if baseURL, bundleName, ok := ztsCABundleEndpoint(source); ok {
+		client, err := newZTSClient(baseURL, DEFAULT_SIGNER_ZTS_TIMEOUT, signerTLSCAPath, clientCertPEM, privateKey, headers)
+		if err != nil {
+			return err, ""
+		}
+		bundle, err := client.GetCertificateAuthorityBundle(bundleName)
+		if err != nil {
+			if test {
+				if status, ok := ztsErrorStatusCode(err); ok && status == http.StatusUnauthorized {
+					return nil, ""
+				}
+			}
+			return formatZTSClientError(err, source), ""
+		}
+		if bundle == nil {
+			if test {
+				return nil, ""
+			}
+			return fmt.Errorf("No CA certificate bundle found in response from %s", source), ""
+		}
+		return nil, bundle.Certs
+	}
+
+	return getZTSRootCAHTTP(test, source, signerTLSCAPath, clientCertPEM, privateKey, headers)
+}
+
+func getZTSRootCAHTTP(test bool, source string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (error, string) {
 	client, err := newSignerHTTPClientWithClientCert(DEFAULT_SIGNER_ZTS_TIMEOUT, signerTLSCAPath, clientCertPEM, privateKey)
 	if err != nil {
 		return err, ""
@@ -139,6 +128,103 @@ func getZTSRootCA(test bool, source string, signerTLSCAPath string, clientCertPE
 	}
 
 	return nil, caPEM
+}
+
+func newZTSClient(baseURL string, timeoutValue string, signerTLSCAPath string, clientCertPEM string, privateKey crypto.PrivateKey, headers *map[string][]string) (athenzzts.ZTSClient, error) {
+	httpClient, err := newSignerHTTPClientWithClientCert(timeoutValue, signerTLSCAPath, clientCertPEM, privateKey)
+	if err != nil {
+		return athenzzts.ZTSClient{}, err
+	}
+
+	transport := httpClient.Transport
+	if headers != nil {
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		transport = headerRoundTripper{
+			base:    transport,
+			headers: headers,
+		}
+	}
+
+	client := athenzzts.NewClient(strings.TrimRight(baseURL, "/"), transport)
+	client.Timeout = httpClient.Timeout
+	return client, nil
+}
+
+type headerRoundTripper struct {
+	base    http.RoundTripper
+	headers *map[string][]string
+}
+
+func (rt headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	for key, values := range *rt.headers {
+		for _, value := range values {
+			cloned.Header.Add(key, value)
+		}
+	}
+	return rt.base.RoundTrip(cloned)
+}
+
+func ztsBaseURLFromUserCertEndpoint(endpoint string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	return strings.TrimSuffix(trimmed, "/usercert")
+}
+
+func ztsCABundleEndpoint(source string) (string, athenzzts.SimpleName, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(source))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", "", false
+	}
+
+	trimmedPath := strings.TrimRight(parsed.Path, "/")
+	marker := "/cacerts/"
+	idx := strings.LastIndex(trimmedPath, marker)
+	if idx < 0 {
+		return "", "", false
+	}
+
+	bundleName := strings.TrimPrefix(trimmedPath[idx:], marker)
+	if bundleName == "" || strings.Contains(bundleName, "/") {
+		return "", "", false
+	}
+	if unescaped, err := url.PathUnescape(bundleName); err == nil {
+		bundleName = unescaped
+	}
+
+	parsed.Path = strings.TrimRight(trimmedPath[:idx], "/")
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/"), athenzzts.SimpleName(bundleName), true
+}
+
+func formatZTSClientError(err error, requestURL string) error {
+	if strings.Contains(err.Error(), "x509: certificate signed by unknown authority") {
+		return fmt.Errorf("Failed to send request: %s (set -signer-tls-ca to the signer server CA PEM path if this is the first direct ZTS request)", err)
+	}
+	if status, ok := ztsErrorStatusCode(err); ok {
+		statusText := fmt.Sprintf("%d", status)
+		if text := http.StatusText(status); text != "" {
+			statusText += " " + text
+		}
+		response := strings.TrimSpace(strings.TrimPrefix(err.Error(), fmt.Sprintf("%d ", status)))
+		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", statusText, requestURL, response)
+	}
+	return fmt.Errorf("Failed to send request: %s", err)
+}
+
+type statusCoder interface {
+	StatusCode() int
+}
+
+func ztsErrorStatusCode(err error) (int, bool) {
+	statusErr, ok := err.(statusCoder)
+	if !ok {
+		return 0, false
+	}
+	status := statusErr.StatusCode()
+	return status, status > 0
 }
 
 func parseZTSRootCAResponse(body []byte, source string, test bool) (string, error) {

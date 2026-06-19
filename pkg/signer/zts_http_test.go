@@ -31,6 +31,9 @@ func TestSendZTSCSR(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST, got %s", r.Method)
 		}
+		if got := r.URL.Path; got != "/zts/v1/usercert" {
+			t.Fatalf("expected ZTS usercert path, got %q", got)
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Fatalf("expected Authorization header, got %q", got)
 		}
@@ -69,7 +72,7 @@ func TestSendZTSCSR(t *testing.T) {
 		"Authorization": {"Bearer token"},
 	}
 
-	err, cert := SendZTSCSR("athenz.user", "https://zts.example/usercert", "csr-data", "code=test-code", "", &headers)
+	err, cert := SendZTSCSR("athenz.user", "https://zts.example/zts/v1/usercert/", "csr-data", "code=test-code", "", &headers)
 	if err != nil {
 		t.Fatalf("SendZTSCSR returned error: %v", err)
 	}
@@ -184,6 +187,38 @@ func TestGetZTSRootCAFetchesRemoteBundle(t *testing.T) {
 	}
 	if cert != "remote-ca" {
 		t.Fatalf("expected remote CA bundle, got %q", cert)
+	}
+}
+
+func TestGetZTSRootCAFetchesOfficialCertificateAuthorityBundle(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	originalDefaultCAURL := DEFAULT_SIGNER_ZTS_CA_URL
+	DEFAULT_SIGNER_ZTS_CA_URL = filepath.Join(t.TempDir(), "missing-ca.pem")
+	t.Cleanup(func() {
+		DEFAULT_SIGNER_ZTS_CA_URL = originalDefaultCAURL
+	})
+
+	restore := stubZTSDefaultTransport(t, func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		if got := r.URL.Path; got != "/zts/v1/cacerts/athenz" {
+			t.Fatalf("expected ZTS cacerts path, got %q", got)
+		}
+		if got := r.URL.RawQuery; got != "" {
+			t.Fatalf("expected query to be stripped from ZTS client base URL, got %q", got)
+		}
+		return jsonResponse(http.StatusOK, `{"name":"athenz","certs":"official-ca"}`), nil
+	})
+	defer restore()
+
+	err, cert := GetZTSRootCA(false, "https://zts.example/zts/v1/cacerts/athenz?ignored=true", nil)
+	if err != nil {
+		t.Fatalf("GetZTSRootCA returned error: %v", err)
+	}
+	if cert != "official-ca" {
+		t.Fatalf("expected official CA bundle, got %q", cert)
 	}
 }
 
