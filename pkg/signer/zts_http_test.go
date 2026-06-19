@@ -1,14 +1,23 @@
 package signer
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSendZTSCSR(t *testing.T) {
@@ -21,6 +30,9 @@ func TestSendZTSCSR(t *testing.T) {
 	restore := stubZTSDefaultTransport(t, func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if got := r.URL.Path; got != "/zts/v1/usercert" {
+			t.Fatalf("expected ZTS usercert path, got %q", got)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Fatalf("expected Authorization header, got %q", got)
@@ -60,7 +72,7 @@ func TestSendZTSCSR(t *testing.T) {
 		"Authorization": {"Bearer token"},
 	}
 
-	err, cert := SendZTSCSR("athenz.user", "https://zts.example/usercert", "csr-data", "code=test-code", "", &headers)
+	err, cert := SendZTSCSR("athenz.user", "https://zts.example/zts/v1/usercert/", "csr-data", "code=test-code", "", &headers)
 	if err != nil {
 		t.Fatalf("SendZTSCSR returned error: %v", err)
 	}
@@ -172,6 +184,75 @@ func TestGetZTSRootCAFetchesRemoteBundle(t *testing.T) {
 	err, cert := GetZTSRootCA(false, "https://zts.example/ca", nil)
 	if err != nil {
 		t.Fatalf("GetZTSRootCA returned error: %v", err)
+	}
+	if cert != "remote-ca" {
+		t.Fatalf("expected remote CA bundle, got %q", cert)
+	}
+}
+
+func TestGetZTSRootCAFetchesOfficialCertificateAuthorityBundle(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	originalDefaultCAURL := DEFAULT_SIGNER_ZTS_CA_URL
+	DEFAULT_SIGNER_ZTS_CA_URL = filepath.Join(t.TempDir(), "missing-ca.pem")
+	t.Cleanup(func() {
+		DEFAULT_SIGNER_ZTS_CA_URL = originalDefaultCAURL
+	})
+
+	restore := stubZTSDefaultTransport(t, func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		if got := r.URL.Path; got != "/zts/v1/cacerts/athenz" {
+			t.Fatalf("expected ZTS cacerts path, got %q", got)
+		}
+		if got := r.URL.RawQuery; got != "" {
+			t.Fatalf("expected query to be stripped from ZTS client base URL, got %q", got)
+		}
+		return jsonResponse(http.StatusOK, `{"name":"athenz","certs":"official-ca"}`), nil
+	})
+	defer restore()
+
+	err, cert := GetZTSRootCA(false, "https://zts.example/zts/v1/cacerts/athenz?ignored=true", nil)
+	if err != nil {
+		t.Fatalf("GetZTSRootCA returned error: %v", err)
+	}
+	if cert != "official-ca" {
+		t.Fatalf("expected official CA bundle, got %q", cert)
+	}
+}
+
+func TestGetZTSRootCAWithClientCertUsesMTLS(t *testing.T) {
+	clientCertPEM, clientKey := createZTSClientCertPEM(t)
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+			http.Error(w, "missing client certificate", http.StatusUnauthorized)
+			return
+		}
+		if got := r.TLS.PeerCertificates[0].Subject.CommonName; got != "athenz.user" {
+			http.Error(w, "unexpected client certificate", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"caCertificates":"remote-ca"}`))
+	}))
+	server.TLS = &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ClientAuth: tls.RequireAnyClientCert,
+	}
+	server.StartTLS()
+	defer server.Close()
+
+	serverCAPath := filepath.Join(t.TempDir(), "server-ca.pem")
+	serverCAPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(serverCAPath, serverCAPEM, 0600); err != nil {
+		t.Fatalf("failed to write server CA certificate: %v", err)
+	}
+
+	err, cert := GetZTSRootCAWithClientCert(false, server.URL, serverCAPath, clientCertPEM, clientKey, nil)
+	if err != nil {
+		t.Fatalf("GetZTSRootCAWithClientCert returned error: %v", err)
 	}
 	if cert != "remote-ca" {
 		t.Fatalf("expected remote CA bundle, got %q", cert)
@@ -361,6 +442,34 @@ func stubZTSDefaultTransport(t *testing.T, roundTrip func(*http.Request) (*http.
 	return func() {
 		http.DefaultTransport = original
 	}
+}
+
+func createZTSClientCertPEM(t *testing.T) (string, *rsa.PrivateKey) {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate private key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "athenz.user",
+		},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), privateKey
 }
 
 type errReader struct{}
