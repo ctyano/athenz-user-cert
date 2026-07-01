@@ -182,31 +182,28 @@ Options:
 	case "vault":
 		err, vaulttoken := signer.GetVaultToken(signer.DEFAULT_SIGNER_VAULT_JWT_LOGIN_URL, signer.DEFAULT_SIGNER_VAULT_JWT_ROLE, accesstoken, nil)
 		if err != nil {
-			fmt.Printf("Failed to get vault token: %s\n", err)
-			os.Exit(1)
+			return fmt.Errorf("Failed to get vault token: %v", err)
 		}
-		if *debug {
-			fmt.Printf("Vault Token retrieved Successfully:\n%s\n", vaulttoken)
+		if *flags.signer.debug {
+			fmt.Fprintf(stdout, "Vault Token retrieved Successfully:\n%s\n", vaulttoken)
 		}
-		err, cert = signer.SendVaultCSR(*commonName, *signerURL, csr, &map[string][]string{
-			"X-Vault-Token": []string{vaulttoken},
+		err, cert = signer.SendVaultCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, &map[string][]string{
+			"X-Vault-Token": {vaulttoken},
 		})
 		if err != nil {
-			fmt.Printf("Failed to get signed certificate: %s\n", err)
-			os.Exit(1)
+			return fmt.Errorf("Failed to get signed certificate: %v", err)
 		}
-		if *debug {
-			fmt.Printf("Signed certificate:\n%s\n", cert)
+		if *flags.signer.debug {
+			fmt.Fprintf(stdout, "Signed certificate:\n%s\n", cert)
 		}
-		err, cacert = signer.GetVaultRootCA(false, *caURL, &map[string][]string{
-			"X-Vault-Token": []string{vaulttoken},
+		err, cacert = signer.GetVaultRootCA(false, *flags.signer.caEndpoint, &map[string][]string{
+			"X-Vault-Token": {vaulttoken},
 		})
 		if err != nil {
-			fmt.Printf("Failed to get ca certificate: %s\n", err)
-			os.Exit(1)
+			return fmt.Errorf("Failed to get ca certificate: %v", err)
 		}
-		if *debug {
-			fmt.Printf("CA certificate:\n%s\n", cacert)
+		if *flags.signer.debug {
+			fmt.Fprintf(stdout, "CA certificate:\n%s\n", cacert)
 		}
 	}
 
@@ -389,11 +386,11 @@ func resolveSignerEndpoints(signerName, endpoint, caEndpoint *string) {
 			*caEndpoint = signer.DEFAULT_SIGNER_ZTS_CA_URL
 		}
 	case "vault":
-		if *signerURL == "" {
-			*signerURL = signer.DEFAULT_SIGNER_VAULT_SIGN_URL
+		if *endpoint == "" {
+			*endpoint = signer.DEFAULT_SIGNER_VAULT_SIGN_URL
 		}
-		if *caURL == "" {
-			*caURL = signer.DEFAULT_SIGNER_VAULT_CA_URL
+		if *caEndpoint == "" {
+			*caEndpoint = signer.DEFAULT_SIGNER_VAULT_CA_URL
 		}
 	}
 }

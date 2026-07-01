@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 )
 
 var (
@@ -24,14 +22,9 @@ var (
 )
 
 func GetVaultToken(url string, role string, jwt string, headers *map[string][]string) (error, string) {
-	type RequestBody struct {
-		Role string `json:"role"`
-		JWT  string `json:"jwt"`
-	}
-
-	body := RequestBody{
-		Role: role,
-		JWT:  jwt,
+	body := map[string]string{
+		"role": role,
+		"jwt":  jwt,
 	}
 
 	jsonData, err := json.Marshal(body)
@@ -39,9 +32,9 @@ func GetVaultToken(url string, role string, jwt string, headers *map[string][]st
 		return fmt.Errorf("Failed to marshal JSON: %s", err), ""
 	}
 
-	timeout, _ := strconv.Atoi(strings.TrimSpace(DEFAULT_SIGNER_VAULT_TIMEOUT))
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
+	client, err := newSignerHTTPClient(DEFAULT_SIGNER_VAULT_TIMEOUT, DefaultSignerTLSCAPath())
+	if err != nil {
+		return err, ""
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
@@ -66,15 +59,13 @@ func GetVaultToken(url string, role string, jwt string, headers *map[string][]st
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, body), ""
-	}
-
-	type auth struct {
-		ClientToken string `json:"client_token"`
+		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, strings.TrimSpace(string(body))), ""
 	}
 
 	var response struct {
-		Auth auth `json:"auth"`
+		Auth struct {
+			ClientToken string `json:"client_token"`
+		} `json:"auth"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
@@ -84,22 +75,13 @@ func GetVaultToken(url string, role string, jwt string, headers *map[string][]st
 	return nil, response.Auth.ClientToken
 }
 
-// SendVaultCSR sends a CSR to the Vault server to issue an certificate
-// Vault API reference:
 // https://developer.hashicorp.com/vault/api-docs/secret/pki#sign-certificate
 func SendVaultCSR(commonName string, url string, csr string, headers *map[string][]string) (error, string) {
-	type RequestBody struct {
-		CSR        string `json:"csr"`
-		CommonName string `json:"common_name"`
-		IssuerRef  string `json:"issuer_ref"`
-		TTL        string `json:"ttl"`
-	}
-
-	body := RequestBody{
-		CSR:        csr,
-		CommonName: commonName,
-		IssuerRef:  DEFAULT_SIGNER_VAULT_ISSUER_REF,
-		TTL:        DEFAULT_SIGNER_VAULT_TTL,
+	body := map[string]string{
+		"csr":         csr,
+		"common_name": commonName,
+		"issuer_ref":  DEFAULT_SIGNER_VAULT_ISSUER_REF,
+		"ttl":         DEFAULT_SIGNER_VAULT_TTL,
 	}
 
 	jsonData, err := json.Marshal(body)
@@ -107,9 +89,9 @@ func SendVaultCSR(commonName string, url string, csr string, headers *map[string
 		return fmt.Errorf("Failed to marshal JSON: %s", err), ""
 	}
 
-	timeout, _ := strconv.Atoi(strings.TrimSpace(DEFAULT_SIGNER_VAULT_TIMEOUT))
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
+	client, err := newSignerHTTPClient(DEFAULT_SIGNER_VAULT_TIMEOUT, DefaultSignerTLSCAPath())
+	if err != nil {
+		return err, ""
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
@@ -134,19 +116,13 @@ func SendVaultCSR(commonName string, url string, csr string, headers *map[string
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, body), ""
-	}
-
-	type data struct {
-		Expiration  int      `json:"expiration"`
-		Certificate string   `json:"certificate"`
-		CA          string   `json:"issuing_ca"`
-		CAChain     []string `json:"ca_chain"`
-		Serial      string   `json:"serial_number"`
+		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, strings.TrimSpace(string(body))), ""
 	}
 
 	var response struct {
-		Data data `json:"data"`
+		Data struct {
+			Certificate string `json:"certificate"`
+		} `json:"data"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
@@ -156,14 +132,12 @@ func SendVaultCSR(commonName string, url string, csr string, headers *map[string
 	return nil, response.Data.Certificate
 }
 
-// GetVaultRootCA gets issuer certificate from the Vault server
-// Vault API reference:
 // https://developer.hashicorp.com/vault/api-docs/secret/pki#read-default-issuer-certificate-chain
 // https://developer.hashicorp.com/vault/api-docs/secret/pki#read-issuer-certificate
 func GetVaultRootCA(test bool, url string, headers *map[string][]string) (error, string) {
-	timeout, _ := strconv.Atoi(strings.TrimSpace(DEFAULT_SIGNER_VAULT_TIMEOUT))
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
+	client, err := newSignerHTTPClient(DEFAULT_SIGNER_VAULT_TIMEOUT, DefaultSignerTLSCAPath())
+	if err != nil {
+		return err, ""
 	}
 
 	req, err := http.NewRequest("GET", url, bytes.NewBuffer(nil))
@@ -192,24 +166,18 @@ func GetVaultRootCA(test bool, url string, headers *map[string][]string) (error,
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, body), ""
-	}
-
-	type data struct {
-		Certificate           string `json:"certificate"`
-		CAChain               string `json:"ca_chain"`
-		IssuedID              string `json:"issuer_id"`
-		RevocationTime        int    `json:"revocation_time"`
-		RevocationTimeRFC3339 string `json:"revocation_time_rfc3339"`
+		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, strings.TrimSpace(string(body))), ""
 	}
 
 	var response struct {
-		Data data `json:"data"`
+		Data struct {
+			CAChain string `json:"ca_chain"`
+		} `json:"data"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Failed to parse JSON response: %w, respose: %#v", err, body), ""
+		return fmt.Errorf("Failed to parse JSON response: %w, response: %#v", err, string(body)), ""
 	}
 
 	return nil, response.Data.CAChain

@@ -127,6 +127,16 @@ func applyPackageDefaults(values map[string]any) {
 	setString(values, &signer.DEFAULT_SIGNER_ZTS_SIGN_URL, []string{"zts.sign_url", "zts.sign-url", "signer.zts.sign_url", "signer.zts.sign-url"}, "ATHENZ_ZTS_SIGN_URL")
 	setString(values, &signer.DEFAULT_SIGNER_ZTS_CA_URL, []string{"zts.ca_endpoint", "zts.ca-endpoint", "signer.zts.ca_endpoint", "signer.zts.ca-endpoint"}, "ATHENZ_ZTS_CA_ENDPOINT")
 	setString(values, &signer.DEFAULT_SIGNER_ZTS_TIMEOUT, []string{"zts.timeout", "signer.zts.timeout"}, "ATHENZ_ZTS_TIMEOUT")
+
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_JWT_LOGIN_URL, []string{"vault.jwt_login_url", "vault.jwt-login-url", "signer.vault.jwt_login_url", "signer.vault.jwt-login-url"}, "ATHENZ_VAULT_JWT_LOGIN_URL")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_JWT_ROLE, []string{"vault.jwt_role", "vault.jwt-role", "signer.vault.jwt_role", "signer.vault.jwt-role"}, "ATHENZ_VAULT_JWT_ROLE")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_PKI_NAME, []string{"vault.pki_name", "vault.pki-name", "signer.vault.pki_name", "signer.vault.pki-name"}, "ATHENZ_VAULT_PKI_NAME")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_PKI_ROLE, []string{"vault.pki_role", "vault.pki-role", "signer.vault.pki_role", "signer.vault.pki-role"}, "ATHENZ_VAULT_PKI_ROLE")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_SIGN_URL, []string{"vault.sign_url", "vault.sign-url", "signer.vault.sign_url", "signer.vault.sign-url"}, "ATHENZ_VAULT_SIGN_URL")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_CA_URL, []string{"vault.ca_endpoint", "vault.ca-endpoint", "signer.vault.ca_endpoint", "signer.vault.ca-endpoint"}, "ATHENZ_VAULT_CA_ENDPOINT")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_ISSUER_REF, []string{"vault.issuer_ref", "vault.issuer-ref", "signer.vault.issuer_ref", "signer.vault.issuer-ref"}, "ATHENZ_VAULT_ISSUER_REF")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_TTL, []string{"vault.ttl", "signer.vault.ttl"}, "ATHENZ_VAULT_TTL")
+	setString(values, &signer.DEFAULT_SIGNER_VAULT_TIMEOUT, []string{"vault.timeout", "signer.vault.timeout"}, "ATHENZ_VAULT_TIMEOUT")
 }
 
 func cnModeKeys() []string {

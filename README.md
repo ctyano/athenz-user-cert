@@ -82,6 +82,17 @@ oidc:
 
 zts:
   timeout: 10
+
+vault:
+  jwt_login_url: http://localhost:10000/v1/auth/jwt/login
+  jwt_role: jwt
+  pki_name: rootca
+  pki_role: issuers
+  sign_url: http://localhost:10000/v1/rootca/sign/issuers
+  ca_endpoint: http://localhost:10000/v1/rootca/cert/ca_chain
+  issuer_ref: default
+  ttl: 1h
+  timeout: 10
 ```
 
 Common environment variable overrides include `ATHENZ_API_URL`,
@@ -94,3 +105,29 @@ external mode.
 
 Use `-oidc-issuer https://issuer.example.com` to override the OIDC issuer for a
 single CLI execution.
+
+### Vault Configuration
+
+The Vault signer authenticates via JWT/OIDC auth, exchanges the OAuth access
+token for a Vault client token, and then signs the CSR using the Vault PKI
+secrets engine.
+
+Example Vault config in `config.yaml`:
+
+```yaml
+signer:
+  name: vault
+
+vault:
+  jwt_login_url: https://vault.example.com/v1/auth/jwt/login
+  jwt_role: athenz-user
+  sign_url: https://vault.example.com/v1/pki/sign/athenz-user
+  ca_endpoint: https://vault.example.com/v1/pki/cert/ca_chain
+  issuer_ref: default
+  ttl: 1h
+  timeout: 10
+```
+
+Environment variables: `ATHENZ_VAULT_JWT_LOGIN_URL`, `ATHENZ_VAULT_JWT_ROLE`,
+`ATHENZ_VAULT_SIGN_URL`, `ATHENZ_VAULT_CA_ENDPOINT`, `ATHENZ_VAULT_ISSUER_REF`,
+`ATHENZ_VAULT_TTL`, `ATHENZ_VAULT_TIMEOUT`.
