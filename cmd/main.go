@@ -179,6 +179,32 @@ Options:
 		if *flags.signer.debug {
 			fmt.Fprintf(stdout, "CA certificate:\n%s\n", cacert)
 		}
+	case "vault":
+		err, vaulttoken := signer.GetVaultToken(signer.DEFAULT_SIGNER_VAULT_JWT_LOGIN_URL, signer.DEFAULT_SIGNER_VAULT_JWT_ROLE, accesstoken, nil)
+		if err != nil {
+			return fmt.Errorf("Failed to get vault token: %v", err)
+		}
+		if *flags.signer.debug {
+			fmt.Fprintf(stdout, "Vault Token retrieved Successfully:\n%s\n", vaulttoken)
+		}
+		err, cert = signer.SendVaultCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, &map[string][]string{
+			"X-Vault-Token": {vaulttoken},
+		})
+		if err != nil {
+			return fmt.Errorf("Failed to get signed certificate: %v", err)
+		}
+		if *flags.signer.debug {
+			fmt.Fprintf(stdout, "Signed certificate:\n%s\n", cert)
+		}
+		err, cacert = signer.GetVaultRootCA(false, *flags.signer.caEndpoint, &map[string][]string{
+			"X-Vault-Token": {vaulttoken},
+		})
+		if err != nil {
+			return fmt.Errorf("Failed to get ca certificate: %v", err)
+		}
+		if *flags.signer.debug {
+			fmt.Fprintf(stdout, "CA certificate:\n%s\n", cacert)
+		}
 	}
 
 	keyPEM, err := privateKeyToPEM(*key)
@@ -358,6 +384,13 @@ func resolveSignerEndpoints(signerName, endpoint, caEndpoint *string) {
 		}
 		if *caEndpoint == "" {
 			*caEndpoint = signer.DEFAULT_SIGNER_ZTS_CA_URL
+		}
+	case "vault":
+		if *endpoint == "" {
+			*endpoint = signer.DEFAULT_SIGNER_VAULT_SIGN_URL
+		}
+		if *caEndpoint == "" {
+			*caEndpoint = signer.DEFAULT_SIGNER_VAULT_CA_URL
 		}
 	}
 }
