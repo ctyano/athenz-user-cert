@@ -36,6 +36,7 @@ var (
 	sendCFSSLCSR                 = signer.SendCFSSLCSR
 	getCFSSLRootCA               = signer.GetCFSSLRootCA
 	sendZTSCSR                   = signer.SendZTSCSR
+	sendZTSExternalIDCSR         = signer.SendZTSExternalIDCSR
 	getZTSRootCA                 = signer.GetZTSRootCA
 	exitFunc                     = os.Exit
 	passwordInputReader          = io.Reader(os.Stdin)
@@ -97,6 +98,7 @@ Options:
 	if err := flagSet.Parse(args); err != nil {
 		return err
 	}
+	flags.signer.endpointSet = flagWasSet(flagSet, "endpoint")
 	applyOIDCFlagOverrides(flags)
 
 	var accesstoken string
@@ -122,7 +124,8 @@ Options:
 		fmt.Fprintf(stdout, "Generated csr:\n%s\n", csr)
 	}
 
-	prepareSignerConfig(flags.signer, stdout)
+	useZTSExternalIDEndpoint := useZTSExternalIDCertificateEndpoint(flags.signer)
+	prepareSignerConfig(flags.signer, useZTSExternalIDEndpoint, stdout)
 
 	var cert, cacert string
 	switch *flags.signer.signerName {
@@ -165,7 +168,11 @@ Options:
 			fmt.Fprintf(stdout, "CA certificate:\n%s\n", cacert)
 		}
 	case "zts":
-		err, cert = sendZTSCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, accesstoken, *flags.signer.signerTLSCAPath, nil)
+		if useZTSExternalIDEndpoint {
+			err, cert = sendZTSExternalIDCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, accesstoken, *flags.signer.signerTLSCAPath, nil)
+		} else {
+			err, cert = sendZTSCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, accesstoken, *flags.signer.signerTLSCAPath, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("Failed to get signed certificate: %v", err)
 		}
@@ -219,6 +226,8 @@ Options:
 type signerCommandFlags struct {
 	signerName             *string
 	endpoint               *string
+	externalIDEndpoint     *string
+	endpointSet            bool
 	caEndpoint             *string
 	signerTLSCAPath        *string
 	commonName             *string
@@ -262,6 +271,7 @@ func addSignerCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings, certT
 	return signerCommandFlags{
 		signerName:             flagSet.String("signer", defaultString(cfg.SignerName, DEFAULT_SIGNER_NAME), "Name for the certificate signer product (\"crypki\", \"cfssl\" or \"zts\")"),
 		endpoint:               flagSet.String("endpoint", cfg.Endpoint, "Target destination URL to send the certificate sign request (leave it empty to use default)"),
+		externalIDEndpoint:     flagSet.String("zts-external-id-endpoint", defaultString(cfg.ExternalIDEndpoint, signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT), "ZTS external ID certificate endpoint used when -signer zts and -athenz-cn-mode external"),
 		caEndpoint:             flagSet.String("ca-endpoint", cfg.CAEndpoint, "Target destination API endpoint to retrieve the signer-issued CA certificate (leave it empty to use default)"),
 		signerTLSCAPath:        flagSet.String("signer-tls-ca", defaultString(cfg.SignerTLSCAPath, signer.DefaultSignerTLSCAPath()), "Local PEM path for the CA used to verify the signer server TLS certificate"),
 		commonName:             flagSet.String("cn", "", fmt.Sprintf("Athenz User Certificate CN for the %s certificate (default depends on -athenz-cn-mode)", certType)),
@@ -280,6 +290,16 @@ func defaultString(value, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func flagWasSet(flagSet *flag.FlagSet, name string) bool {
+	wasSet := false
+	flagSet.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			wasSet = true
+		}
+	})
+	return wasSet
 }
 
 func applyOIDCFlagOverrides(flags mainCommandFlags) {
@@ -336,7 +356,7 @@ func getPassword(passwordStdin bool) (string, error) {
 	return password, nil
 }
 
-func resolveSignerEndpoints(signerName, endpoint, caEndpoint *string) {
+func resolveSignerEndpoints(signerName, endpoint, externalIDEndpoint, caEndpoint *string, endpointSet, useZTSExternalIDEndpoint bool) {
 	switch *signerName {
 	case "crypki":
 		if *endpoint == "" {
@@ -353,7 +373,9 @@ func resolveSignerEndpoints(signerName, endpoint, caEndpoint *string) {
 			*caEndpoint = signer.DEFAULT_SIGNER_CFSSL_CA_URL
 		}
 	case "zts":
-		if *endpoint == "" {
+		if useZTSExternalIDEndpoint && !endpointSet {
+			*endpoint = defaultString(*externalIDEndpoint, signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT)
+		} else if *endpoint == "" {
 			*endpoint = signer.DEFAULT_SIGNER_ZTS_SIGN_URL
 		}
 		if *caEndpoint == "" {
@@ -362,14 +384,19 @@ func resolveSignerEndpoints(signerName, endpoint, caEndpoint *string) {
 	}
 }
 
-func prepareSignerConfig(flags signerCommandFlags, stdout io.Writer) {
-	resolveSignerEndpoints(flags.signerName, flags.endpoint, flags.caEndpoint)
+func prepareSignerConfig(flags signerCommandFlags, useZTSExternalIDEndpoint bool, stdout io.Writer) {
+	resolveSignerEndpoints(flags.signerName, flags.endpoint, flags.externalIDEndpoint, flags.caEndpoint, flags.endpointSet, useZTSExternalIDEndpoint)
 	signer.DEFAULT_SIGNER_TLS_CA_PATH = strings.TrimSpace(*flags.signerTLSCAPath)
 	if *flags.debug {
 		fmt.Fprintf(stdout, "Signer URL is set as:%s\n", *flags.endpoint)
 		fmt.Fprintf(stdout, "Signer CA endpoint is set as:%s\n", *flags.caEndpoint)
 		fmt.Fprintf(stdout, "Signer TLS CA path is set as:%s\n", *flags.signerTLSCAPath)
 	}
+}
+
+func useZTSExternalIDCertificateEndpoint(flags signerCommandFlags) bool {
+	mode := strings.ToLower(strings.TrimSpace(defaultString(*flags.cnMode, certificate.DEFAULT_ATHENZ_CN_MODE)))
+	return mode == athenzCNModeExternal
 }
 
 func setCommonNameFromAccessToken(accessToken string, flags signerCommandFlags, stdout io.Writer) error {

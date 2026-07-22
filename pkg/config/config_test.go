@@ -43,6 +43,7 @@ zts:
 	t.Setenv("ATHENZ_API_URL", "https://env.example/zts/v1/usercert")
 	t.Setenv("ATHENZ_CA_ENDPOINT", "https://env.example/zts/v1/ca")
 	t.Setenv("ATHENZ_ZTS_SIGN_URL", "https://zts.env.example/zts/v1/usercert")
+	t.Setenv("ATHENZ_ZTS_EXTERNAL_ID_ENDPOINT", "https://zts.env.example/zts/v1/extmembercert")
 
 	settings, err := Load()
 	if err != nil {
@@ -54,6 +55,9 @@ zts:
 	}
 	if settings.Endpoint != "https://env.example/zts/v1/usercert" {
 		t.Fatalf("expected endpoint from env, got %q", settings.Endpoint)
+	}
+	if settings.ExternalIDEndpoint != "https://zts.env.example/zts/v1/extmembercert" {
+		t.Fatalf("expected external ID endpoint from env, got %q", settings.ExternalIDEndpoint)
 	}
 	if settings.CAEndpoint != "https://env.example/zts/v1/ca" {
 		t.Fatalf("expected CA endpoint from env, got %q", settings.CAEndpoint)
@@ -99,6 +103,9 @@ zts:
 	}
 	if signer.DEFAULT_SIGNER_ZTS_SIGN_URL != "https://zts.env.example/zts/v1/usercert" {
 		t.Fatalf("expected zts sign url from env, got %q", signer.DEFAULT_SIGNER_ZTS_SIGN_URL)
+	}
+	if signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT != "https://zts.env.example/zts/v1/extmembercert" {
+		t.Fatalf("expected zts external ID endpoint from env, got %q", signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT)
 	}
 }
 
@@ -205,6 +212,7 @@ func saveDefaults() func() {
 	cfsslTimeout := signer.DEFAULT_SIGNER_CFSSL_TIMEOUT
 
 	ztsSignURL := signer.DEFAULT_SIGNER_ZTS_SIGN_URL
+	ztsExternalIDEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT
 	ztsCAURL := signer.DEFAULT_SIGNER_ZTS_CA_URL
 	ztsTimeout := signer.DEFAULT_SIGNER_ZTS_TIMEOUT
 	signerTLSCAPath := signer.DEFAULT_SIGNER_TLS_CA_PATH
@@ -233,6 +241,7 @@ func saveDefaults() func() {
 		signer.DEFAULT_SIGNER_CFSSL_TIMEOUT = cfsslTimeout
 
 		signer.DEFAULT_SIGNER_ZTS_SIGN_URL = ztsSignURL
+		signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = ztsExternalIDEndpoint
 		signer.DEFAULT_SIGNER_ZTS_CA_URL = ztsCAURL
 		signer.DEFAULT_SIGNER_ZTS_TIMEOUT = ztsTimeout
 		signer.DEFAULT_SIGNER_TLS_CA_PATH = signerTLSCAPath

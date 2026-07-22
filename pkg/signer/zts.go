@@ -10,25 +10,37 @@ import (
 )
 
 var (
-	DEFAULT_SIGNER_ZTS_SIGN_URL = "https://127.0.0.1:4443/zts/v1/usercert"
-	DEFAULT_SIGNER_ZTS_CA_URL   = ""
-	DEFAULT_SIGNER_ZTS_TIMEOUT  = "10" // in seconds
+	DEFAULT_SIGNER_ZTS_SIGN_URL             = "https://127.0.0.1:4443/zts/v1/usercert"
+	DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = "https://127.0.0.1:4443/zts/v1/extmembercert"
+	DEFAULT_SIGNER_ZTS_CA_URL               = ""
+	DEFAULT_SIGNER_ZTS_TIMEOUT              = "10" // in seconds
 )
 
 // SendZTSCSR sends a CSR to the Athenz ZTS user certificate endpoint.
-func SendZTSCSR(name string, url string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
-	type RequestBody struct {
-		Name            string `json:"name"`
-		CSR             string `json:"csr"`
-		AttestationData string `json:"attestationData"`
-	}
-
-	body := RequestBody{
+func SendZTSCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+	return sendZTSCertificateRequest(endpoint, ztsCertificateRequest{
 		Name:            name,
 		CSR:             csr,
 		AttestationData: attestationData,
-	}
+	}, signerTLSCAPath, headers)
+}
 
+// SendZTSExternalIDCSR sends a CSR to the Athenz ZTS external ID certificate endpoint.
+func SendZTSExternalIDCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+	return sendZTSCertificateRequest(endpoint, ztsCertificateRequest{
+		Name:            name,
+		CSR:             csr,
+		AttestationData: attestationData,
+	}, signerTLSCAPath, headers)
+}
+
+type ztsCertificateRequest struct {
+	Name            string `json:"name"`
+	CSR             string `json:"csr"`
+	AttestationData string `json:"attestationData"`
+}
+
+func sendZTSCertificateRequest(endpoint string, body ztsCertificateRequest, signerTLSCAPath string, headers *map[string][]string) (error, string) {
 	jsonData, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("Failed to marshal JSON: %s", err), ""
@@ -39,7 +51,7 @@ func SendZTSCSR(name string, url string, csr string, attestationData string, sig
 		return err, ""
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("Failed to create request: %s", err), ""
 	}
@@ -64,7 +76,7 @@ func SendZTSCSR(name string, url string, csr string, attestationData string, sig
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, url, strings.TrimSpace(string(body))), ""
+		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, endpoint, strings.TrimSpace(string(body))), ""
 	}
 
 	var response struct {
