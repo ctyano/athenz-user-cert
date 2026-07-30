@@ -32,7 +32,8 @@ oidc:
   username_claim: name
   external_id_claim: email
 zts:
-  sign_url: https://zts.config.example/zts/v1/usercert
+  sign_url: https://zts.config.example/zts/v1
+  external_member_cert_endpoint: https://zts.config.example/zts/v1/extmembercert
   ca_endpoint: https://zts.config.example/zts/v1/ca
 `), 0600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -42,7 +43,8 @@ zts:
 	t.Setenv("HOME", home)
 	t.Setenv("ATHENZ_API_URL", "https://env.example/zts/v1/usercert")
 	t.Setenv("ATHENZ_CA_ENDPOINT", "https://env.example/zts/v1/ca")
-	t.Setenv("ATHENZ_ZTS_SIGN_URL", "https://zts.env.example/zts/v1/usercert")
+	t.Setenv("ATHENZ_ZTS_SIGN_URL", "https://zts.env.example/zts/v1")
+	t.Setenv("ATHENZ_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT", "https://zts.env.example/zts/v1/extmembercert")
 
 	settings, err := Load()
 	if err != nil {
@@ -54,6 +56,9 @@ zts:
 	}
 	if settings.Endpoint != "https://env.example/zts/v1/usercert" {
 		t.Fatalf("expected endpoint from env, got %q", settings.Endpoint)
+	}
+	if settings.ExternalMemberCertEndpoint != "https://zts.env.example/zts/v1/extmembercert" {
+		t.Fatalf("expected external member certificate endpoint from env, got %q", settings.ExternalMemberCertEndpoint)
 	}
 	if settings.CAEndpoint != "https://env.example/zts/v1/ca" {
 		t.Fatalf("expected CA endpoint from env, got %q", settings.CAEndpoint)
@@ -97,8 +102,39 @@ zts:
 	if certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN != "config.external.domain" {
 		t.Fatalf("expected Athenz external ID domain default from config, got %q", certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN)
 	}
-	if signer.DEFAULT_SIGNER_ZTS_SIGN_URL != "https://zts.env.example/zts/v1/usercert" {
+	if signer.DEFAULT_SIGNER_ZTS_SIGN_URL != "https://zts.env.example/zts/v1" {
 		t.Fatalf("expected zts sign url from env, got %q", signer.DEFAULT_SIGNER_ZTS_SIGN_URL)
+	}
+	if signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT != "https://zts.env.example/zts/v1/extmembercert" {
+		t.Fatalf("expected zts external member certificate endpoint from env, got %q", signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT)
+	}
+}
+
+func TestLoadAppendsZTSExternalMemberCertEndpointPathToConfiguredSignURL(t *testing.T) {
+	restore := saveDefaults()
+	defer restore()
+
+	home := t.TempDir()
+	configPath := filepath.Join(home, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+zts:
+  sign_url: https://zts.config.example/zts/v1
+`), 0600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	t.Setenv(envConfigPath, configPath)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if settings.ExternalMemberCertEndpoint != "" {
+		t.Fatalf("expected empty explicit external member certificate endpoint setting, got %q", settings.ExternalMemberCertEndpoint)
+	}
+	if signer.DefaultZTSExternalMemberCertEndpoint() != "https://zts.config.example/zts/v1/extmembercert" {
+		t.Fatalf("expected zts external member certificate endpoint with appended path, got %q", signer.DefaultZTSExternalMemberCertEndpoint())
 	}
 }
 
@@ -205,6 +241,7 @@ func saveDefaults() func() {
 	cfsslTimeout := signer.DEFAULT_SIGNER_CFSSL_TIMEOUT
 
 	ztsSignURL := signer.DEFAULT_SIGNER_ZTS_SIGN_URL
+	ztsExternalMemberCertEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT
 	ztsCAURL := signer.DEFAULT_SIGNER_ZTS_CA_URL
 	ztsTimeout := signer.DEFAULT_SIGNER_ZTS_TIMEOUT
 	signerTLSCAPath := signer.DEFAULT_SIGNER_TLS_CA_PATH
@@ -233,6 +270,7 @@ func saveDefaults() func() {
 		signer.DEFAULT_SIGNER_CFSSL_TIMEOUT = cfsslTimeout
 
 		signer.DEFAULT_SIGNER_ZTS_SIGN_URL = ztsSignURL
+		signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT = ztsExternalMemberCertEndpoint
 		signer.DEFAULT_SIGNER_ZTS_CA_URL = ztsCAURL
 		signer.DEFAULT_SIGNER_ZTS_TIMEOUT = ztsTimeout
 		signer.DEFAULT_SIGNER_TLS_CA_PATH = signerTLSCAPath

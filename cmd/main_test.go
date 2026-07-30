@@ -59,11 +59,12 @@ func TestBuildAthenzExternalCommonName(t *testing.T) {
 func TestAthenzCNFlagsUseConfigDefaults(t *testing.T) {
 	flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
 	flags := addCommandFlags(flagSet, &appconfig.Settings{
-		CNMode:           "external",
-		UserClaim:        "name",
-		UserDomain:       "config.user.domain",
-		ExternalIDDomain: "config.domain",
-		ExternalIDClaim:  "email",
+		CNMode:                     "external",
+		UserClaim:                  "name",
+		UserDomain:                 "config.user.domain",
+		ExternalIDDomain:           "config.domain",
+		ExternalIDClaim:            "email",
+		ExternalMemberCertEndpoint: "https://zts.config.example/zts/v1/extmembercert",
 	})
 	if err := flagSet.Parse(nil); err != nil {
 		t.Fatalf("flag parse returned error: %v", err)
@@ -83,6 +84,9 @@ func TestAthenzCNFlagsUseConfigDefaults(t *testing.T) {
 	if *flags.signer.externalIDDomain != "config.domain" {
 		t.Fatalf("expected Athenz external ID domain from config, got %q", *flags.signer.externalIDDomain)
 	}
+	if *flags.signer.externalMemberCertEndpoint != "https://zts.config.example/zts/v1/extmembercert" {
+		t.Fatalf("expected ZTS external member certificate endpoint from config, got %q", *flags.signer.externalMemberCertEndpoint)
+	}
 	if flags.signer.externalIDClaimDefault != "email" {
 		t.Fatalf("expected external ID claim default from config, got %q", flags.signer.externalIDClaimDefault)
 	}
@@ -95,6 +99,7 @@ func TestAthenzCNFlagsUseCommandLineOverrides(t *testing.T) {
 		"-athenz-cn-mode", "external",
 		"-athenz-user-domain", "flag.user.domain",
 		"-athenz-external-id-domain", "flag.domain",
+		"-zts-external-member-cert-endpoint", "https://zts.flag.example/zts/v1/extmembercert",
 		"-claim", "sub",
 	}); err != nil {
 		t.Fatalf("flag parse returned error: %v", err)
@@ -108,6 +113,9 @@ func TestAthenzCNFlagsUseCommandLineOverrides(t *testing.T) {
 	if *flags.signer.externalIDDomain != "flag.domain" {
 		t.Fatalf("expected Athenz external ID domain from flag, got %q", *flags.signer.externalIDDomain)
 	}
+	if *flags.signer.externalMemberCertEndpoint != "https://zts.flag.example/zts/v1/extmembercert" {
+		t.Fatalf("expected ZTS external member certificate endpoint from flag, got %q", *flags.signer.externalMemberCertEndpoint)
+	}
 	if *flags.signer.identityClaim != "sub" {
 		t.Fatalf("expected identity claim from flag, got %q", *flags.signer.identityClaim)
 	}
@@ -117,20 +125,23 @@ func TestResolveSignerEndpoints(t *testing.T) {
 	tests := []struct {
 		name         string
 		signer       string
+		external     bool
 		wantEndpoint string
 		wantCA       string
 	}{
 		{name: "crypki", signer: "crypki", wantEndpoint: "http://localhost:10000/v3/sig/x509-cert/keys/x509-key", wantCA: "http://localhost:10000/v3/sig/x509-cert/keys/x509-key"},
 		{name: "cfssl", signer: "cfssl", wantEndpoint: "http://localhost:10000/api/v1/cfssl/sign", wantCA: "http://localhost:10000/api/v1/cfssl/info"},
 		{name: "zts", signer: "zts", wantEndpoint: "https://127.0.0.1:4443/zts/v1/usercert", wantCA: ""},
+		{name: "zts external member certificate", signer: "zts", external: true, wantEndpoint: "https://127.0.0.1:4443/zts/v1/extmembercert", wantCA: ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			signerName := tt.signer
 			endpoint := ""
+			externalMemberCertEndpoint := signer.DefaultZTSExternalMemberCertEndpoint()
 			caEndpoint := ""
-			resolveSignerEndpoints(&signerName, &endpoint, &caEndpoint)
+			resolveSignerEndpoints(&signerName, &endpoint, &externalMemberCertEndpoint, &caEndpoint, false, tt.external)
 			if endpoint != tt.wantEndpoint {
 				t.Fatalf("expected endpoint %q, got %q", tt.wantEndpoint, endpoint)
 			}
@@ -138,6 +149,36 @@ func TestResolveSignerEndpoints(t *testing.T) {
 				t.Fatalf("expected CA endpoint %q, got %q", tt.wantCA, caEndpoint)
 			}
 		})
+	}
+}
+
+func TestResolveSignerEndpointsKeepsExplicitEndpoint(t *testing.T) {
+	signerName := "zts"
+	endpoint := "https://zts.example/custom"
+	externalMemberCertEndpoint := "https://zts.example/zts/v1/extmembercert"
+	caEndpoint := ""
+
+	resolveSignerEndpoints(&signerName, &endpoint, &externalMemberCertEndpoint, &caEndpoint, true, true)
+	if endpoint != "https://zts.example/custom" {
+		t.Fatalf("expected explicit endpoint to be preserved, got %q", endpoint)
+	}
+}
+
+func TestResolveSignerEndpointsAppendsExternalMemberCertEndpointPathToZTSDefault(t *testing.T) {
+	restore := saveCmdGlobals()
+	defer restore()
+
+	signer.DEFAULT_SIGNER_ZTS_SIGN_URL = "https://zts.example/zts/v1"
+	signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT = ""
+
+	signerName := "zts"
+	endpoint := ""
+	externalMemberCertEndpoint := signer.DefaultZTSExternalMemberCertEndpoint()
+	caEndpoint := ""
+
+	resolveSignerEndpoints(&signerName, &endpoint, &externalMemberCertEndpoint, &caEndpoint, false, true)
+	if endpoint != "https://zts.example/zts/v1/extmembercert" {
+		t.Fatalf("expected external member certificate endpoint with appended path, got %q", endpoint)
 	}
 }
 
@@ -556,6 +597,36 @@ func TestExecuteSignerFlows(t *testing.T) {
 			},
 		},
 		{
+			name:            "zts with external member certificate endpoint",
+			args:            []string{"-signer", "zts", "-athenz-cn-mode", "external", "-athenz-external-id-domain", "email"},
+			wantCommonName:  "email:ext.alice",
+			wantCert:        "zts-external-member-cert",
+			wantCACert:      "",
+			wantAccessToken: "cached-token",
+			wantCAUpdated:   false,
+			setup: func(t *testing.T) {
+				getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
+					return "cached-token", nil
+				}
+				sendZTSCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+					t.Fatal("did not expect ZTS user certificate endpoint for external CN mode")
+					return nil, ""
+				}
+				sendZTSExternalMemberCertCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+					if endpoint != signer.DefaultZTSExternalMemberCertEndpoint() {
+						t.Fatalf("expected external member certificate endpoint %q, got %q", signer.DefaultZTSExternalMemberCertEndpoint(), endpoint)
+					}
+					if attestationData != "cached-token" {
+						t.Fatalf("expected access token attestation data, got %q", attestationData)
+					}
+					return nil, "zts-external-member-cert"
+				}
+				getZTSRootCA = func(test bool, source string, headers *map[string][]string) (error, string) {
+					return nil, ""
+				}
+			},
+		},
+		{
 			name:            "zts with explicit common name",
 			args:            []string{"-signer", "zts", "-cn", "custom.name"},
 			wantCommonName:  "custom.name",
@@ -934,6 +1005,9 @@ func installDefaultCommandStubs(t *testing.T) {
 	sendZTSCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
 		return io.EOF, ""
 	}
+	sendZTSExternalMemberCertCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+		return io.EOF, ""
+	}
 	getZTSRootCA = func(test bool, source string, headers *map[string][]string) (error, string) { return io.EOF, "" }
 }
 
@@ -955,8 +1029,11 @@ func saveCmdGlobals() func() {
 	savedSendCFSSLCSR := sendCFSSLCSR
 	savedGetCFSSLRootCA := getCFSSLRootCA
 	savedSendZTSCSR := sendZTSCSR
+	savedSendZTSExternalMemberCertCSR := sendZTSExternalMemberCertCSR
 	savedGetZTSRootCA := getZTSRootCA
 	savedSignerTLSCAPath := signer.DEFAULT_SIGNER_TLS_CA_PATH
+	savedZTSSignURL := signer.DEFAULT_SIGNER_ZTS_SIGN_URL
+	savedZTSExternalMemberCertEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT
 	savedOIDCIssuer := oidc.DEFAULT_OIDC_ISSUER
 	savedAthenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
 	savedAthenzUserDomain := certificate.DEFAULT_ATHENZ_USER_DOMAIN
@@ -982,8 +1059,11 @@ func saveCmdGlobals() func() {
 		sendCFSSLCSR = savedSendCFSSLCSR
 		getCFSSLRootCA = savedGetCFSSLRootCA
 		sendZTSCSR = savedSendZTSCSR
+		sendZTSExternalMemberCertCSR = savedSendZTSExternalMemberCertCSR
 		getZTSRootCA = savedGetZTSRootCA
 		signer.DEFAULT_SIGNER_TLS_CA_PATH = savedSignerTLSCAPath
+		signer.DEFAULT_SIGNER_ZTS_SIGN_URL = savedZTSSignURL
+		signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT = savedZTSExternalMemberCertEndpoint
 		oidc.DEFAULT_OIDC_ISSUER = savedOIDCIssuer
 		certificate.DEFAULT_ATHENZ_CN_MODE = savedAthenzCNMode
 		certificate.DEFAULT_ATHENZ_USER_DOMAIN = savedAthenzUserDomain

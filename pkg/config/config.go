@@ -18,18 +18,19 @@ const (
 )
 
 type Settings struct {
-	ConfigPath       string
-	SignerName       string
-	Endpoint         string
-	CAEndpoint       string
-	SignerTLSCAPath  string
-	OIDCIssuer       string
-	CNMode           string
-	UserClaim        string
-	UserDomain       string
-	ExternalIDClaim  string
-	ExternalIDDomain string
-	ResponseMode     string
+	ConfigPath                 string
+	SignerName                 string
+	Endpoint                   string
+	ExternalMemberCertEndpoint string
+	CAEndpoint                 string
+	SignerTLSCAPath            string
+	OIDCIssuer                 string
+	CNMode                     string
+	UserClaim                  string
+	UserDomain                 string
+	ExternalIDClaim            string
+	ExternalIDDomain           string
+	ResponseMode               string
 }
 
 func Load() (*Settings, error) {
@@ -48,18 +49,19 @@ func Load() (*Settings, error) {
 	externalIDClaim := stringValue(values, externalIDClaimKeys(), "ATHENZ_EXTERNAL_ID_CLAIM", "ATHENZ_OIDC_EXTERNAL_ID_CLAIM")
 
 	return &Settings{
-		ConfigPath:       configPath,
-		SignerName:       stringValue(values, []string{"signer.name", "signer"}, "ATHENZ_SIGNER"),
-		Endpoint:         stringValue(values, []string{"endpoint", "api_url", "api-url", "signer.endpoint"}, "ATHENZ_API_URL", "ATHENZ_ENDPOINT"),
-		CAEndpoint:       stringValue(values, []string{"ca_endpoint", "ca-endpoint", "signer.ca_endpoint", "signer.ca-endpoint"}, "ATHENZ_CA_ENDPOINT"),
-		SignerTLSCAPath:  stringValue(values, []string{"signer_tls_ca_path", "signer-tls-ca-path", "signer.tls_ca_path", "signer.tls-ca-path"}, "ATHENZ_SIGNER_TLS_CA_PATH"),
-		OIDCIssuer:       stringValue(values, []string{"oidc.issuer", "issuer"}, "ATHENZ_OIDC_ISSUER", "ATHENZ_ISSUER"),
-		CNMode:           stringValue(values, cnModeKeys(), "ATHENZ_CN_MODE"),
-		UserClaim:        userClaim,
-		UserDomain:       stringValue(values, userDomainKeys(), "ATHENZ_USER_DOMAIN"),
-		ExternalIDClaim:  externalIDClaim,
-		ExternalIDDomain: stringValue(values, externalIDDomainKeys(), "ATHENZ_EXTERNAL_ID_DOMAIN"),
-		ResponseMode:     stringValue(values, []string{"oidc.response_mode", "oidc.response-mode", "response_mode", "response-mode"}, "ATHENZ_OIDC_RESPONSE_MODE", "ATHENZ_RESPONSE_MODE"),
+		ConfigPath:                 configPath,
+		SignerName:                 stringValue(values, []string{"signer.name", "signer"}, "ATHENZ_SIGNER"),
+		Endpoint:                   stringValue(values, []string{"endpoint", "api_url", "api-url", "signer.endpoint"}, "ATHENZ_API_URL", "ATHENZ_ENDPOINT"),
+		ExternalMemberCertEndpoint: stringValue(values, ztsExternalMemberCertEndpointKeys(), "ATHENZ_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT"),
+		CAEndpoint:                 stringValue(values, []string{"ca_endpoint", "ca-endpoint", "signer.ca_endpoint", "signer.ca-endpoint"}, "ATHENZ_CA_ENDPOINT"),
+		SignerTLSCAPath:            stringValue(values, []string{"signer_tls_ca_path", "signer-tls-ca-path", "signer.tls_ca_path", "signer.tls-ca-path"}, "ATHENZ_SIGNER_TLS_CA_PATH"),
+		OIDCIssuer:                 stringValue(values, []string{"oidc.issuer", "issuer"}, "ATHENZ_OIDC_ISSUER", "ATHENZ_ISSUER"),
+		CNMode:                     stringValue(values, cnModeKeys(), "ATHENZ_CN_MODE"),
+		UserClaim:                  userClaim,
+		UserDomain:                 stringValue(values, userDomainKeys(), "ATHENZ_USER_DOMAIN"),
+		ExternalIDClaim:            externalIDClaim,
+		ExternalIDDomain:           stringValue(values, externalIDDomainKeys(), "ATHENZ_EXTERNAL_ID_DOMAIN"),
+		ResponseMode:               stringValue(values, []string{"oidc.response_mode", "oidc.response-mode", "response_mode", "response-mode"}, "ATHENZ_OIDC_RESPONSE_MODE", "ATHENZ_RESPONSE_MODE"),
 	}, nil
 }
 
@@ -125,6 +127,7 @@ func applyPackageDefaults(values map[string]any) {
 	setString(values, &signer.DEFAULT_SIGNER_CFSSL_TIMEOUT, []string{"cfssl.timeout", "signer.cfssl.timeout"}, "ATHENZ_CFSSL_TIMEOUT")
 
 	setString(values, &signer.DEFAULT_SIGNER_ZTS_SIGN_URL, []string{"zts.sign_url", "zts.sign-url", "signer.zts.sign_url", "signer.zts.sign-url"}, "ATHENZ_ZTS_SIGN_URL")
+	setString(values, &signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT, ztsExternalMemberCertEndpointKeys(), "ATHENZ_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT")
 	setString(values, &signer.DEFAULT_SIGNER_ZTS_CA_URL, []string{"zts.ca_endpoint", "zts.ca-endpoint", "signer.zts.ca_endpoint", "signer.zts.ca-endpoint"}, "ATHENZ_ZTS_CA_ENDPOINT")
 	setString(values, &signer.DEFAULT_SIGNER_ZTS_TIMEOUT, []string{"zts.timeout", "signer.zts.timeout"}, "ATHENZ_ZTS_TIMEOUT")
 }
@@ -144,6 +147,15 @@ func externalIDDomainKeys() []string {
 		"athenz.external-id-domain",
 		"external_id_domain",
 		"external-id-domain",
+	}
+}
+
+func ztsExternalMemberCertEndpointKeys() []string {
+	return []string{
+		"zts.external_member_cert_endpoint",
+		"zts.external-member-cert-endpoint",
+		"signer.zts.external_member_cert_endpoint",
+		"signer.zts.external-member-cert-endpoint",
 	}
 }
 

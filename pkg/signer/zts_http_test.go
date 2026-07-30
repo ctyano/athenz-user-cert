@@ -34,11 +34,7 @@ func TestSendZTSCSR(t *testing.T) {
 			t.Fatalf("failed to read request body: %v", err)
 		}
 
-		var payload struct {
-			Name            string `json:"name"`
-			CSR             string `json:"csr"`
-			AttestationData string `json:"attestationData"`
-		}
+		var payload ztsUserCertificateRequest
 		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Fatalf("failed to parse request body: %v", err)
 		}
@@ -65,6 +61,56 @@ func TestSendZTSCSR(t *testing.T) {
 		t.Fatalf("SendZTSCSR returned error: %v", err)
 	}
 	if cert != "signed-cert" {
+		t.Fatalf("expected certificate, got %q", cert)
+	}
+}
+
+func TestSendZTSExternalMemberCertCSR(t *testing.T) {
+	originalDefaultCAURL := DEFAULT_SIGNER_ZTS_CA_URL
+	DEFAULT_SIGNER_ZTS_CA_URL = filepath.Join(t.TempDir(), "missing-ca.pem")
+	t.Cleanup(func() {
+		DEFAULT_SIGNER_ZTS_CA_URL = originalDefaultCAURL
+	})
+
+	restore := stubZTSDefaultTransport(t, func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/zts/v1/extmembercert" {
+			t.Fatalf("expected external member certificate path, got %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Content-Type"); !strings.Contains(got, "application/json") {
+			t.Fatalf("expected json content type, got %q", got)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var payload ztsExternalMemberCertificateRequest
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("failed to parse request body: %v", err)
+		}
+		if payload.Name != "email:ext.joe@athenz.io" {
+			t.Fatalf("expected external member name, got %q", payload.Name)
+		}
+		if payload.CSR != "csr-data" {
+			t.Fatalf("expected request csr, got %q", payload.CSR)
+		}
+		if payload.AttestationData != "code=test-code" {
+			t.Fatalf("expected request attestation data, got %q", payload.AttestationData)
+		}
+
+		return jsonResponse(http.StatusOK, `{"x509Certificate":"external-member-cert"}`), nil
+	})
+	defer restore()
+
+	err, cert := SendZTSExternalMemberCertCSR("email:ext.joe@athenz.io", "https://zts.example/zts/v1/extmembercert", "csr-data", "code=test-code", "", nil)
+	if err != nil {
+		t.Fatalf("SendZTSExternalMemberCertCSR returned error: %v", err)
+	}
+	if cert != "external-member-cert" {
 		t.Fatalf("expected certificate, got %q", cert)
 	}
 }
@@ -148,6 +194,23 @@ func TestSendZTSCSRAdditionalErrors(t *testing.T) {
 
 		if err, _ := SendZTSCSR("athenz.user", "https://zts.example/usercert", "csr-data", "code=test-code", "", nil); err == nil {
 			t.Fatal("expected invalid JSON response")
+		}
+	})
+
+	t.Run("missing certificate response", func(t *testing.T) {
+		originalDefaultCAURL := DEFAULT_SIGNER_ZTS_CA_URL
+		DEFAULT_SIGNER_ZTS_CA_URL = filepath.Join(t.TempDir(), "missing-ca.pem")
+		t.Cleanup(func() {
+			DEFAULT_SIGNER_ZTS_CA_URL = originalDefaultCAURL
+		})
+
+		restore := stubZTSDefaultTransport(t, func(r *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, `{}`), nil
+		})
+		defer restore()
+
+		if err, _ := SendZTSCSR("athenz.user", "https://zts.example/usercert", "csr-data", "code=test-code", "", nil); err == nil || !strings.Contains(err.Error(), "x509Certificate is missing") {
+			t.Fatalf("expected missing x509Certificate error, got %v", err)
 		}
 	})
 }
