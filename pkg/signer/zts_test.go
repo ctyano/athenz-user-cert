@@ -89,6 +89,46 @@ func TestDefaultSignerTLSCAPath(t *testing.T) {
 	}
 }
 
+func TestDefaultZTSCertificateEndpoints(t *testing.T) {
+	originalSignURL := DEFAULT_SIGNER_ZTS_SIGN_URL
+	originalExternalIDEndpoint := DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT
+	t.Cleanup(func() {
+		DEFAULT_SIGNER_ZTS_SIGN_URL = originalSignURL
+		DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = originalExternalIDEndpoint
+	})
+
+	DEFAULT_SIGNER_ZTS_SIGN_URL = "https://zts.example/zts/v1"
+	DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = ""
+
+	if got := DefaultZTSUserCertificateEndpoint(); got != "https://zts.example/zts/v1/usercert" {
+		t.Fatalf("expected user certificate endpoint, got %q", got)
+	}
+	if got := DefaultZTSExternalIDEndpoint(); got != "https://zts.example/zts/v1/extmembercert" {
+		t.Fatalf("expected external ID endpoint, got %q", got)
+	}
+
+	DEFAULT_SIGNER_ZTS_SIGN_URL = "https://zts.example/zts/v1/"
+	if got := DefaultZTSUserCertificateEndpoint(); got != "https://zts.example/zts/v1/usercert" {
+		t.Fatalf("expected normalized user certificate endpoint, got %q", got)
+	}
+	if got := DefaultZTSExternalIDEndpoint(); got != "https://zts.example/zts/v1/extmembercert" {
+		t.Fatalf("expected normalized external ID endpoint, got %q", got)
+	}
+
+	DEFAULT_SIGNER_ZTS_SIGN_URL = "https://zts.example/zts/v1/usercert"
+	if got := DefaultZTSUserCertificateEndpoint(); got != "https://zts.example/zts/v1/usercert" {
+		t.Fatalf("expected legacy user certificate endpoint to be preserved, got %q", got)
+	}
+	if got := DefaultZTSExternalIDEndpoint(); got != "https://zts.example/zts/v1/extmembercert" {
+		t.Fatalf("expected external ID endpoint from legacy sign URL, got %q", got)
+	}
+
+	DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = "https://zts-alt.example/zts/v1/extmembercert"
+	if got := DefaultZTSExternalIDEndpoint(); got != "https://zts-alt.example/zts/v1/extmembercert" {
+		t.Fatalf("expected explicit external ID endpoint, got %q", got)
+	}
+}
+
 func TestNewSignerHTTPClientUsesExplicitRelativePathAsIs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

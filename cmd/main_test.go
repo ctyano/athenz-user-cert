@@ -139,7 +139,7 @@ func TestResolveSignerEndpoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			signerName := tt.signer
 			endpoint := ""
-			externalIDEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT
+			externalIDEndpoint := signer.DefaultZTSExternalIDEndpoint()
 			caEndpoint := ""
 			resolveSignerEndpoints(&signerName, &endpoint, &externalIDEndpoint, &caEndpoint, false, tt.external)
 			if endpoint != tt.wantEndpoint {
@@ -161,6 +161,24 @@ func TestResolveSignerEndpointsKeepsExplicitEndpoint(t *testing.T) {
 	resolveSignerEndpoints(&signerName, &endpoint, &externalIDEndpoint, &caEndpoint, true, true)
 	if endpoint != "https://zts.example/custom" {
 		t.Fatalf("expected explicit endpoint to be preserved, got %q", endpoint)
+	}
+}
+
+func TestResolveSignerEndpointsAppendsExternalEndpointPathToZTSDefault(t *testing.T) {
+	restore := saveCmdGlobals()
+	defer restore()
+
+	signer.DEFAULT_SIGNER_ZTS_SIGN_URL = "https://zts.example/zts/v1"
+	signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = ""
+
+	signerName := "zts"
+	endpoint := ""
+	externalIDEndpoint := signer.DefaultZTSExternalIDEndpoint()
+	caEndpoint := ""
+
+	resolveSignerEndpoints(&signerName, &endpoint, &externalIDEndpoint, &caEndpoint, false, true)
+	if endpoint != "https://zts.example/zts/v1/extmembercert" {
+		t.Fatalf("expected external ID endpoint with appended path, got %q", endpoint)
 	}
 }
 
@@ -595,8 +613,8 @@ func TestExecuteSignerFlows(t *testing.T) {
 					return nil, ""
 				}
 				sendZTSExternalIDCSR = func(name, endpoint, csr, attestationData, signerTLSCAPath string, headers *map[string][]string) (error, string) {
-					if endpoint != signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT {
-						t.Fatalf("expected external ID endpoint %q, got %q", signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT, endpoint)
+					if endpoint != signer.DefaultZTSExternalIDEndpoint() {
+						t.Fatalf("expected external ID endpoint %q, got %q", signer.DefaultZTSExternalIDEndpoint(), endpoint)
 					}
 					if attestationData != "cached-token" {
 						t.Fatalf("expected access token attestation data, got %q", attestationData)
@@ -1014,6 +1032,7 @@ func saveCmdGlobals() func() {
 	savedSendZTSExternalIDCSR := sendZTSExternalIDCSR
 	savedGetZTSRootCA := getZTSRootCA
 	savedSignerTLSCAPath := signer.DEFAULT_SIGNER_TLS_CA_PATH
+	savedZTSSignURL := signer.DEFAULT_SIGNER_ZTS_SIGN_URL
 	savedZTSExternalIDEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT
 	savedOIDCIssuer := oidc.DEFAULT_OIDC_ISSUER
 	savedAthenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
@@ -1043,6 +1062,7 @@ func saveCmdGlobals() func() {
 		sendZTSExternalIDCSR = savedSendZTSExternalIDCSR
 		getZTSRootCA = savedGetZTSRootCA
 		signer.DEFAULT_SIGNER_TLS_CA_PATH = savedSignerTLSCAPath
+		signer.DEFAULT_SIGNER_ZTS_SIGN_URL = savedZTSSignURL
 		signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = savedZTSExternalIDEndpoint
 		oidc.DEFAULT_OIDC_ISSUER = savedOIDCIssuer
 		certificate.DEFAULT_ATHENZ_CN_MODE = savedAthenzCNMode

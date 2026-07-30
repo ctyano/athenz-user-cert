@@ -32,7 +32,8 @@ oidc:
   username_claim: name
   external_id_claim: email
 zts:
-  sign_url: https://zts.config.example/zts/v1/usercert
+  sign_url: https://zts.config.example/zts/v1
+  external_id_endpoint: https://zts.config.example/zts/v1/extmembercert
   ca_endpoint: https://zts.config.example/zts/v1/ca
 `), 0600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -42,7 +43,7 @@ zts:
 	t.Setenv("HOME", home)
 	t.Setenv("ATHENZ_API_URL", "https://env.example/zts/v1/usercert")
 	t.Setenv("ATHENZ_CA_ENDPOINT", "https://env.example/zts/v1/ca")
-	t.Setenv("ATHENZ_ZTS_SIGN_URL", "https://zts.env.example/zts/v1/usercert")
+	t.Setenv("ATHENZ_ZTS_SIGN_URL", "https://zts.env.example/zts/v1")
 	t.Setenv("ATHENZ_ZTS_EXTERNAL_ID_ENDPOINT", "https://zts.env.example/zts/v1/extmembercert")
 
 	settings, err := Load()
@@ -101,11 +102,39 @@ zts:
 	if certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN != "config.external.domain" {
 		t.Fatalf("expected Athenz external ID domain default from config, got %q", certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN)
 	}
-	if signer.DEFAULT_SIGNER_ZTS_SIGN_URL != "https://zts.env.example/zts/v1/usercert" {
+	if signer.DEFAULT_SIGNER_ZTS_SIGN_URL != "https://zts.env.example/zts/v1" {
 		t.Fatalf("expected zts sign url from env, got %q", signer.DEFAULT_SIGNER_ZTS_SIGN_URL)
 	}
 	if signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT != "https://zts.env.example/zts/v1/extmembercert" {
 		t.Fatalf("expected zts external ID endpoint from env, got %q", signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT)
+	}
+}
+
+func TestLoadAppendsZTSExternalIDEndpointPathToConfiguredSignURL(t *testing.T) {
+	restore := saveDefaults()
+	defer restore()
+
+	home := t.TempDir()
+	configPath := filepath.Join(home, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+zts:
+  sign_url: https://zts.config.example/zts/v1
+`), 0600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	t.Setenv(envConfigPath, configPath)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if settings.ExternalIDEndpoint != "" {
+		t.Fatalf("expected empty explicit external ID endpoint setting, got %q", settings.ExternalIDEndpoint)
+	}
+	if signer.DefaultZTSExternalIDEndpoint() != "https://zts.config.example/zts/v1/extmembercert" {
+		t.Fatalf("expected zts external ID endpoint with appended path, got %q", signer.DefaultZTSExternalIDEndpoint())
 	}
 }
 

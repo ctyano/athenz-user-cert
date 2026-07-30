@@ -271,7 +271,7 @@ func addSignerCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings, certT
 	return signerCommandFlags{
 		signerName:             flagSet.String("signer", defaultString(cfg.SignerName, DEFAULT_SIGNER_NAME), "Name for the certificate signer product (\"crypki\", \"cfssl\" or \"zts\")"),
 		endpoint:               flagSet.String("endpoint", cfg.Endpoint, "Target destination URL to send the certificate sign request (leave it empty to use default)"),
-		externalIDEndpoint:     flagSet.String("zts-external-id-endpoint", defaultString(cfg.ExternalIDEndpoint, signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT), "ZTS external ID certificate endpoint used when -signer zts and -athenz-cn-mode external"),
+		externalIDEndpoint:     flagSet.String("zts-external-id-endpoint", defaultString(cfg.ExternalIDEndpoint, signer.DefaultZTSExternalIDEndpoint()), "ZTS external ID certificate endpoint used when -signer zts and -athenz-cn-mode external"),
 		caEndpoint:             flagSet.String("ca-endpoint", cfg.CAEndpoint, "Target destination API endpoint to retrieve the signer-issued CA certificate (leave it empty to use default)"),
 		signerTLSCAPath:        flagSet.String("signer-tls-ca", defaultString(cfg.SignerTLSCAPath, signer.DefaultSignerTLSCAPath()), "Local PEM path for the CA used to verify the signer server TLS certificate"),
 		commonName:             flagSet.String("cn", "", fmt.Sprintf("Athenz User Certificate CN for the %s certificate (default depends on -athenz-cn-mode)", certType)),
@@ -374,9 +374,9 @@ func resolveSignerEndpoints(signerName, endpoint, externalIDEndpoint, caEndpoint
 		}
 	case "zts":
 		if useZTSExternalIDEndpoint && !endpointSet {
-			*endpoint = defaultString(*externalIDEndpoint, signer.DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT)
+			*endpoint = defaultString(*externalIDEndpoint, signer.DefaultZTSExternalIDEndpoint())
 		} else if *endpoint == "" {
-			*endpoint = signer.DEFAULT_SIGNER_ZTS_SIGN_URL
+			*endpoint = signer.DefaultZTSUserCertificateEndpoint()
 		}
 		if *caEndpoint == "" {
 			*caEndpoint = signer.DEFAULT_SIGNER_ZTS_CA_URL

@@ -10,37 +10,97 @@ import (
 )
 
 var (
-	DEFAULT_SIGNER_ZTS_SIGN_URL             = "https://127.0.0.1:4443/zts/v1/usercert"
-	DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = "https://127.0.0.1:4443/zts/v1/extmembercert"
+	DEFAULT_SIGNER_ZTS_SIGN_URL             = "https://127.0.0.1:4443/zts/v1"
+	DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = ""
 	DEFAULT_SIGNER_ZTS_CA_URL               = ""
 	DEFAULT_SIGNER_ZTS_TIMEOUT              = "10" // in seconds
 )
 
+const (
+	ztsUserCertificatePath       = "/usercert"
+	ztsExternalIDCertificatePath = "/extmembercert"
+)
+
+// DefaultZTSUserCertificateEndpoint returns the configured ZTS base URL plus the user certificate path.
+func DefaultZTSUserCertificateEndpoint() string {
+	return ztsCertificateEndpoint(DEFAULT_SIGNER_ZTS_SIGN_URL, ztsUserCertificatePath)
+}
+
+// DefaultZTSExternalIDEndpoint returns the configured endpoint or the ZTS base URL plus the external ID certificate path.
+func DefaultZTSExternalIDEndpoint() string {
+	if DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT != "" {
+		return DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT
+	}
+	return ztsCertificateEndpoint(DEFAULT_SIGNER_ZTS_SIGN_URL, ztsExternalIDCertificatePath)
+}
+
+func ztsCertificateEndpoint(baseOrEndpoint, certificatePath string) string {
+	endpoint := strings.TrimRight(strings.TrimSpace(baseOrEndpoint), "/")
+	switch {
+	case strings.HasSuffix(endpoint, ztsUserCertificatePath):
+		return strings.TrimSuffix(endpoint, ztsUserCertificatePath) + certificatePath
+	case strings.HasSuffix(endpoint, ztsExternalIDCertificatePath):
+		return strings.TrimSuffix(endpoint, ztsExternalIDCertificatePath) + certificatePath
+	default:
+		return endpoint + certificatePath
+	}
+}
+
 // SendZTSCSR sends a CSR to the Athenz ZTS user certificate endpoint.
 func SendZTSCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
-	return sendZTSCertificateRequest(endpoint, ztsCertificateRequest{
+	return sendZTSCertificateRequest(endpoint, ztsUserCertificateRequest{
 		Name:            name,
 		CSR:             csr,
 		AttestationData: attestationData,
-	}, signerTLSCAPath, headers)
+	}, signerTLSCAPath, headers, &ztsUserCertificate{})
 }
 
 // SendZTSExternalIDCSR sends a CSR to the Athenz ZTS external ID certificate endpoint.
 func SendZTSExternalIDCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
-	return sendZTSCertificateRequest(endpoint, ztsCertificateRequest{
+	return sendZTSCertificateRequest(endpoint, ztsExternalMemberCertificateRequest{
 		Name:            name,
 		CSR:             csr,
 		AttestationData: attestationData,
-	}, signerTLSCAPath, headers)
+	}, signerTLSCAPath, headers, &ztsExternalMemberCertificate{})
 }
 
-type ztsCertificateRequest struct {
-	Name            string `json:"name"`
-	CSR             string `json:"csr"`
-	AttestationData string `json:"attestationData"`
+type ztsUserCertificateRequest struct {
+	Name                string `json:"name"`
+	CSR                 string `json:"csr"`
+	AttestationData     string `json:"attestationData"`
+	ExpiryTime          *int32 `json:"expiryTime,omitempty"`
+	X509CertSignerKeyID string `json:"x509CertSignerKeyId,omitempty"`
 }
 
-func sendZTSCertificateRequest(endpoint string, body ztsCertificateRequest, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+type ztsExternalMemberCertificateRequest struct {
+	Name                string `json:"name"`
+	CSR                 string `json:"csr"`
+	AttestationData     string `json:"attestationData"`
+	ExpiryTime          *int32 `json:"expiryTime,omitempty"`
+	X509CertSignerKeyID string `json:"x509CertSignerKeyId,omitempty"`
+}
+
+type ztsCertificateResponse interface {
+	certificate() string
+}
+
+type ztsUserCertificate struct {
+	X509Certificate string `json:"x509Certificate"`
+}
+
+func (cert *ztsUserCertificate) certificate() string {
+	return cert.X509Certificate
+}
+
+type ztsExternalMemberCertificate struct {
+	X509Certificate string `json:"x509Certificate"`
+}
+
+func (cert *ztsExternalMemberCertificate) certificate() string {
+	return cert.X509Certificate
+}
+
+func sendZTSCertificateRequest(endpoint string, body any, signerTLSCAPath string, headers *map[string][]string, response ztsCertificateResponse) (error, string) {
 	jsonData, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("Failed to marshal JSON: %s", err), ""
@@ -79,15 +139,16 @@ func sendZTSCertificateRequest(endpoint string, body ztsCertificateRequest, sign
 		return fmt.Errorf("Received non-OK status: %s, url: %s, response: %s", resp.Status, endpoint, strings.TrimSpace(string(body))), ""
 	}
 
-	var response struct {
-		X509Certificate string `json:"x509Certificate"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
 		return fmt.Errorf("Failed to parse JSON response: %w", err), ""
 	}
 
-	return nil, response.X509Certificate
+	cert := response.certificate()
+	if strings.TrimSpace(cert) == "" {
+		return fmt.Errorf("Failed to parse JSON response: x509Certificate is missing"), ""
+	}
+
+	return nil, cert
 }
 
 // GetZTSRootCA returns the signer-issued CA bundle from a remote endpoint.
