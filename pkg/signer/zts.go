@@ -10,15 +10,15 @@ import (
 )
 
 var (
-	DEFAULT_SIGNER_ZTS_SIGN_URL             = "https://127.0.0.1:4443/zts/v1"
-	DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT = ""
-	DEFAULT_SIGNER_ZTS_CA_URL               = ""
-	DEFAULT_SIGNER_ZTS_TIMEOUT              = "10" // in seconds
+	DEFAULT_SIGNER_ZTS_SIGN_URL                      = "https://127.0.0.1:4443/zts/v1"
+	DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT = ""
+	DEFAULT_SIGNER_ZTS_CA_URL                        = ""
+	DEFAULT_SIGNER_ZTS_TIMEOUT                       = "10" // in seconds
 )
 
 const (
-	ztsUserCertificatePath       = "/usercert"
-	ztsExternalIDCertificatePath = "/extmembercert"
+	ztsUserCertificatePath           = "/usercert"
+	ztsExternalMemberCertificatePath = "/extmembercert"
 )
 
 // DefaultZTSUserCertificateEndpoint returns the configured ZTS base URL plus the user certificate path.
@@ -26,12 +26,12 @@ func DefaultZTSUserCertificateEndpoint() string {
 	return ztsCertificateEndpoint(DEFAULT_SIGNER_ZTS_SIGN_URL, ztsUserCertificatePath)
 }
 
-// DefaultZTSExternalIDEndpoint returns the configured endpoint or the ZTS base URL plus the external ID certificate path.
-func DefaultZTSExternalIDEndpoint() string {
-	if DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT != "" {
-		return DEFAULT_SIGNER_ZTS_EXTERNAL_ID_ENDPOINT
+// DefaultZTSExternalMemberCertEndpoint returns the configured endpoint or the ZTS base URL plus the external member certificate path.
+func DefaultZTSExternalMemberCertEndpoint() string {
+	if DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT != "" {
+		return DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT
 	}
-	return ztsCertificateEndpoint(DEFAULT_SIGNER_ZTS_SIGN_URL, ztsExternalIDCertificatePath)
+	return ztsCertificateEndpoint(DEFAULT_SIGNER_ZTS_SIGN_URL, ztsExternalMemberCertificatePath)
 }
 
 func ztsCertificateEndpoint(baseOrEndpoint, certificatePath string) string {
@@ -39,8 +39,8 @@ func ztsCertificateEndpoint(baseOrEndpoint, certificatePath string) string {
 	switch {
 	case strings.HasSuffix(endpoint, ztsUserCertificatePath):
 		return strings.TrimSuffix(endpoint, ztsUserCertificatePath) + certificatePath
-	case strings.HasSuffix(endpoint, ztsExternalIDCertificatePath):
-		return strings.TrimSuffix(endpoint, ztsExternalIDCertificatePath) + certificatePath
+	case strings.HasSuffix(endpoint, ztsExternalMemberCertificatePath):
+		return strings.TrimSuffix(endpoint, ztsExternalMemberCertificatePath) + certificatePath
 	default:
 		return endpoint + certificatePath
 	}
@@ -55,8 +55,8 @@ func SendZTSCSR(name string, endpoint string, csr string, attestationData string
 	}, signerTLSCAPath, headers, &ztsUserCertificate{})
 }
 
-// SendZTSExternalIDCSR sends a CSR to the Athenz ZTS external ID certificate endpoint.
-func SendZTSExternalIDCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
+// SendZTSExternalMemberCertCSR sends a CSR to the Athenz ZTS external member certificate endpoint.
+func SendZTSExternalMemberCertCSR(name string, endpoint string, csr string, attestationData string, signerTLSCAPath string, headers *map[string][]string) (error, string) {
 	return sendZTSCertificateRequest(endpoint, ztsExternalMemberCertificateRequest{
 		Name:            name,
 		CSR:             csr,

@@ -65,7 +65,7 @@ func TestSendZTSCSR(t *testing.T) {
 	}
 }
 
-func TestSendZTSExternalIDCSR(t *testing.T) {
+func TestSendZTSExternalMemberCertCSR(t *testing.T) {
 	originalDefaultCAURL := DEFAULT_SIGNER_ZTS_CA_URL
 	DEFAULT_SIGNER_ZTS_CA_URL = filepath.Join(t.TempDir(), "missing-ca.pem")
 	t.Cleanup(func() {
@@ -77,7 +77,7 @@ func TestSendZTSExternalIDCSR(t *testing.T) {
 			t.Fatalf("expected POST, got %s", r.Method)
 		}
 		if r.URL.Path != "/zts/v1/extmembercert" {
-			t.Fatalf("expected external ID certificate path, got %q", r.URL.Path)
+			t.Fatalf("expected external member certificate path, got %q", r.URL.Path)
 		}
 		if got := r.Header.Get("Content-Type"); !strings.Contains(got, "application/json") {
 			t.Fatalf("expected json content type, got %q", got)
@@ -93,7 +93,7 @@ func TestSendZTSExternalIDCSR(t *testing.T) {
 			t.Fatalf("failed to parse request body: %v", err)
 		}
 		if payload.Name != "email:ext.joe@athenz.io" {
-			t.Fatalf("expected external ID name, got %q", payload.Name)
+			t.Fatalf("expected external member name, got %q", payload.Name)
 		}
 		if payload.CSR != "csr-data" {
 			t.Fatalf("expected request csr, got %q", payload.CSR)
@@ -102,15 +102,15 @@ func TestSendZTSExternalIDCSR(t *testing.T) {
 			t.Fatalf("expected request attestation data, got %q", payload.AttestationData)
 		}
 
-		return jsonResponse(http.StatusOK, `{"x509Certificate":"external-id-cert"}`), nil
+		return jsonResponse(http.StatusOK, `{"x509Certificate":"external-member-cert"}`), nil
 	})
 	defer restore()
 
-	err, cert := SendZTSExternalIDCSR("email:ext.joe@athenz.io", "https://zts.example/zts/v1/extmembercert", "csr-data", "code=test-code", "", nil)
+	err, cert := SendZTSExternalMemberCertCSR("email:ext.joe@athenz.io", "https://zts.example/zts/v1/extmembercert", "csr-data", "code=test-code", "", nil)
 	if err != nil {
-		t.Fatalf("SendZTSExternalIDCSR returned error: %v", err)
+		t.Fatalf("SendZTSExternalMemberCertCSR returned error: %v", err)
 	}
-	if cert != "external-id-cert" {
+	if cert != "external-member-cert" {
 		t.Fatalf("expected certificate, got %q", cert)
 	}
 }

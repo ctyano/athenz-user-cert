@@ -36,7 +36,7 @@ var (
 	sendCFSSLCSR                 = signer.SendCFSSLCSR
 	getCFSSLRootCA               = signer.GetCFSSLRootCA
 	sendZTSCSR                   = signer.SendZTSCSR
-	sendZTSExternalIDCSR         = signer.SendZTSExternalIDCSR
+	sendZTSExternalMemberCertCSR = signer.SendZTSExternalMemberCertCSR
 	getZTSRootCA                 = signer.GetZTSRootCA
 	exitFunc                     = os.Exit
 	passwordInputReader          = io.Reader(os.Stdin)
@@ -124,8 +124,8 @@ Options:
 		fmt.Fprintf(stdout, "Generated csr:\n%s\n", csr)
 	}
 
-	useZTSExternalIDEndpoint := useZTSExternalIDCertificateEndpoint(flags.signer)
-	prepareSignerConfig(flags.signer, useZTSExternalIDEndpoint, stdout)
+	useExternalMemberCertEndpoint := useZTSExternalMemberCertEndpoint(flags.signer)
+	prepareSignerConfig(flags.signer, useExternalMemberCertEndpoint, stdout)
 
 	var cert, cacert string
 	switch *flags.signer.signerName {
@@ -168,8 +168,8 @@ Options:
 			fmt.Fprintf(stdout, "CA certificate:\n%s\n", cacert)
 		}
 	case "zts":
-		if useZTSExternalIDEndpoint {
-			err, cert = sendZTSExternalIDCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, accesstoken, *flags.signer.signerTLSCAPath, nil)
+		if useExternalMemberCertEndpoint {
+			err, cert = sendZTSExternalMemberCertCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, accesstoken, *flags.signer.signerTLSCAPath, nil)
 		} else {
 			err, cert = sendZTSCSR(*flags.signer.commonName, *flags.signer.endpoint, csr, accesstoken, *flags.signer.signerTLSCAPath, nil)
 		}
@@ -224,20 +224,20 @@ Options:
 }
 
 type signerCommandFlags struct {
-	signerName             *string
-	endpoint               *string
-	externalIDEndpoint     *string
-	endpointSet            bool
-	caEndpoint             *string
-	signerTLSCAPath        *string
-	commonName             *string
-	cnMode                 *string
-	identityClaim          *string
-	userDomain             *string
-	externalIDDomain       *string
-	userClaimDefault       string
-	externalIDClaimDefault string
-	debug                  *bool
+	signerName                 *string
+	endpoint                   *string
+	externalMemberCertEndpoint *string
+	endpointSet                bool
+	caEndpoint                 *string
+	signerTLSCAPath            *string
+	commonName                 *string
+	cnMode                     *string
+	identityClaim              *string
+	userDomain                 *string
+	externalIDDomain           *string
+	userClaimDefault           string
+	externalIDClaimDefault     string
+	debug                      *bool
 }
 
 type mainCommandFlags struct {
@@ -269,19 +269,19 @@ func addCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings) mainCommand
 
 func addSignerCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings, certType string) signerCommandFlags {
 	return signerCommandFlags{
-		signerName:             flagSet.String("signer", defaultString(cfg.SignerName, DEFAULT_SIGNER_NAME), "Name for the certificate signer product (\"crypki\", \"cfssl\" or \"zts\")"),
-		endpoint:               flagSet.String("endpoint", cfg.Endpoint, "Target destination URL to send the certificate sign request (leave it empty to use default)"),
-		externalIDEndpoint:     flagSet.String("zts-external-id-endpoint", defaultString(cfg.ExternalIDEndpoint, signer.DefaultZTSExternalIDEndpoint()), "ZTS external ID certificate endpoint used when -signer zts and -athenz-cn-mode external"),
-		caEndpoint:             flagSet.String("ca-endpoint", cfg.CAEndpoint, "Target destination API endpoint to retrieve the signer-issued CA certificate (leave it empty to use default)"),
-		signerTLSCAPath:        flagSet.String("signer-tls-ca", defaultString(cfg.SignerTLSCAPath, signer.DefaultSignerTLSCAPath()), "Local PEM path for the CA used to verify the signer server TLS certificate"),
-		commonName:             flagSet.String("cn", "", fmt.Sprintf("Athenz User Certificate CN for the %s certificate (default depends on -athenz-cn-mode)", certType)),
-		cnMode:                 flagSet.String("athenz-cn-mode", defaultString(cfg.CNMode, certificate.DEFAULT_ATHENZ_CN_MODE), "Athenz User Certificate CN derivation mode (\"user\" or \"external\")"),
-		identityClaim:          flagSet.String("claim", "", "JWT Claim Name used to derive the Athenz User Certificate CN (mode-specific default if empty)"),
-		userDomain:             flagSet.String("athenz-user-domain", defaultString(cfg.UserDomain, certificate.DEFAULT_ATHENZ_USER_DOMAIN), "Athenz user domain for the derived Athenz User Certificate CN"),
-		externalIDDomain:       flagSet.String("athenz-external-id-domain", defaultString(cfg.ExternalIDDomain, certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN), "Athenz external ID domain for the derived Athenz User Certificate CN"),
-		userClaimDefault:       defaultString(cfg.UserClaim, oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM),
-		externalIDClaimDefault: defaultString(cfg.ExternalIDClaim, oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM),
-		debug:                  flagSet.Bool("debug", false, "Print the access token to send the Certificate Siginig Request"),
+		signerName:                 flagSet.String("signer", defaultString(cfg.SignerName, DEFAULT_SIGNER_NAME), "Name for the certificate signer product (\"crypki\", \"cfssl\" or \"zts\")"),
+		endpoint:                   flagSet.String("endpoint", cfg.Endpoint, "Target destination URL to send the certificate sign request (leave it empty to use default)"),
+		externalMemberCertEndpoint: flagSet.String("zts-external-member-cert-endpoint", defaultString(cfg.ExternalMemberCertEndpoint, signer.DefaultZTSExternalMemberCertEndpoint()), "ZTS external member certificate endpoint used when -signer zts and -athenz-cn-mode external"),
+		caEndpoint:                 flagSet.String("ca-endpoint", cfg.CAEndpoint, "Target destination API endpoint to retrieve the signer-issued CA certificate (leave it empty to use default)"),
+		signerTLSCAPath:            flagSet.String("signer-tls-ca", defaultString(cfg.SignerTLSCAPath, signer.DefaultSignerTLSCAPath()), "Local PEM path for the CA used to verify the signer server TLS certificate"),
+		commonName:                 flagSet.String("cn", "", fmt.Sprintf("Athenz User Certificate CN for the %s certificate (default depends on -athenz-cn-mode)", certType)),
+		cnMode:                     flagSet.String("athenz-cn-mode", defaultString(cfg.CNMode, certificate.DEFAULT_ATHENZ_CN_MODE), "Athenz User Certificate CN derivation mode (\"user\" or \"external\")"),
+		identityClaim:              flagSet.String("claim", "", "JWT Claim Name used to derive the Athenz User Certificate CN (mode-specific default if empty)"),
+		userDomain:                 flagSet.String("athenz-user-domain", defaultString(cfg.UserDomain, certificate.DEFAULT_ATHENZ_USER_DOMAIN), "Athenz user domain for the derived Athenz User Certificate CN"),
+		externalIDDomain:           flagSet.String("athenz-external-id-domain", defaultString(cfg.ExternalIDDomain, certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN), "Athenz external ID domain for the derived Athenz User Certificate CN"),
+		userClaimDefault:           defaultString(cfg.UserClaim, oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM),
+		externalIDClaimDefault:     defaultString(cfg.ExternalIDClaim, oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM),
+		debug:                      flagSet.Bool("debug", false, "Print the access token to send the Certificate Siginig Request"),
 	}
 }
 
@@ -356,7 +356,7 @@ func getPassword(passwordStdin bool) (string, error) {
 	return password, nil
 }
 
-func resolveSignerEndpoints(signerName, endpoint, externalIDEndpoint, caEndpoint *string, endpointSet, useZTSExternalIDEndpoint bool) {
+func resolveSignerEndpoints(signerName, endpoint, externalMemberCertEndpoint, caEndpoint *string, endpointSet, useZTSExternalMemberCertEndpoint bool) {
 	switch *signerName {
 	case "crypki":
 		if *endpoint == "" {
@@ -373,8 +373,8 @@ func resolveSignerEndpoints(signerName, endpoint, externalIDEndpoint, caEndpoint
 			*caEndpoint = signer.DEFAULT_SIGNER_CFSSL_CA_URL
 		}
 	case "zts":
-		if useZTSExternalIDEndpoint && !endpointSet {
-			*endpoint = defaultString(*externalIDEndpoint, signer.DefaultZTSExternalIDEndpoint())
+		if useZTSExternalMemberCertEndpoint && !endpointSet {
+			*endpoint = defaultString(*externalMemberCertEndpoint, signer.DefaultZTSExternalMemberCertEndpoint())
 		} else if *endpoint == "" {
 			*endpoint = signer.DefaultZTSUserCertificateEndpoint()
 		}
@@ -384,8 +384,8 @@ func resolveSignerEndpoints(signerName, endpoint, externalIDEndpoint, caEndpoint
 	}
 }
 
-func prepareSignerConfig(flags signerCommandFlags, useZTSExternalIDEndpoint bool, stdout io.Writer) {
-	resolveSignerEndpoints(flags.signerName, flags.endpoint, flags.externalIDEndpoint, flags.caEndpoint, flags.endpointSet, useZTSExternalIDEndpoint)
+func prepareSignerConfig(flags signerCommandFlags, useZTSExternalMemberCertEndpoint bool, stdout io.Writer) {
+	resolveSignerEndpoints(flags.signerName, flags.endpoint, flags.externalMemberCertEndpoint, flags.caEndpoint, flags.endpointSet, useZTSExternalMemberCertEndpoint)
 	signer.DEFAULT_SIGNER_TLS_CA_PATH = strings.TrimSpace(*flags.signerTLSCAPath)
 	if *flags.debug {
 		fmt.Fprintf(stdout, "Signer URL is set as:%s\n", *flags.endpoint)
@@ -394,7 +394,7 @@ func prepareSignerConfig(flags signerCommandFlags, useZTSExternalIDEndpoint bool
 	}
 }
 
-func useZTSExternalIDCertificateEndpoint(flags signerCommandFlags) bool {
+func useZTSExternalMemberCertEndpoint(flags signerCommandFlags) bool {
 	mode := strings.ToLower(strings.TrimSpace(defaultString(*flags.cnMode, certificate.DEFAULT_ATHENZ_CN_MODE)))
 	return mode == athenzCNModeExternal
 }

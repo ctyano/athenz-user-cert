@@ -82,7 +82,7 @@ oidc:
 
 zts:
   sign_url: https://zts.example.com/zts/v1
-  external_id_endpoint: https://zts.example.com/zts/v1/extmembercert
+  external_member_cert_endpoint: https://zts.example.com/zts/v1/extmembercert
   timeout: 10
 ```
 
@@ -93,8 +93,8 @@ Certificate CN mode: `user` produces `<user_domain>.<username>`, and `external`
 produces `<external_id_domain>:ext.<external_id>`. For the `zts` signer,
 `zts.sign_url` / `ATHENZ_ZTS_SIGN_URL` is treated as the ZTS API base URL:
 user mode uses `/usercert`, and external mode uses `/extmembercert`. Legacy
-values ending in `/usercert` are normalized. Use `-zts-external-id-endpoint`,
-`ATHENZ_ZTS_EXTERNAL_ID_ENDPOINT`, or `zts.external_id_endpoint` to override
+values ending in `/usercert` are normalized. Use `-zts-external-member-cert-endpoint`,
+`ATHENZ_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT`, or `zts.external_member_cert_endpoint` to override
 the external member certificate endpoint. Use
 `ATHENZ_USER_DOMAIN` for user mode. Use `ATHENZ_EXTERNAL_ID_DOMAIN` and
 `ATHENZ_EXTERNAL_ID_CLAIM` for external mode.
