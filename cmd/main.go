@@ -248,6 +248,7 @@ type mainCommandFlags struct {
 	uriarg        *string
 	responseMode  *string
 	oidcIssuer    *string
+	oidcCacheTTL  *string
 	oidcUser      *string
 	oidcPassStdin *bool
 }
@@ -262,6 +263,8 @@ func addCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings) mainCommand
 	flags.uriarg = flagSet.String("uri", "", "Comma-separated SANs(Subject Alternative Names) as URIs for the certificate")
 	flags.responseMode = flagSet.String("response-mode", defaultString(cfg.ResponseMode, "form_post"), "OAuth2 response_mode (\"query\" or \"form_post\")")
 	flags.oidcIssuer = flagSet.String("oidc-issuer", defaultString(cfg.OIDCIssuer, oidc.DEFAULT_OIDC_ISSUER), "OpenID Connect issuer URL")
+	flags.oidcCacheTTL = flagSet.String("oidc-access-token-cache-expiry-minutes", defaultString(cfg.OIDCAccessTokenCacheExpiry, oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES), "Maximum age in minutes for cached OIDC access tokens")
+	flagSet.StringVar(flags.oidcCacheTTL, "oidc-token-expiry-minutes", *flags.oidcCacheTTL, "Alias for -oidc-access-token-cache-expiry-minutes")
 	flags.oidcUser = flagSet.String("oidc-user", "", "OIDC user for password grant")
 	flags.oidcPassStdin = flagSet.Bool("oidc-password-stdin", false, "Read the OIDC password for password grant from stdin")
 	return flags
@@ -305,6 +308,9 @@ func flagWasSet(flagSet *flag.FlagSet, name string) bool {
 func applyOIDCFlagOverrides(flags mainCommandFlags) {
 	if flags.oidcIssuer != nil {
 		oidc.DEFAULT_OIDC_ISSUER = strings.TrimSpace(*flags.oidcIssuer)
+	}
+	if flags.oidcCacheTTL != nil {
+		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = strings.TrimSpace(*flags.oidcCacheTTL)
 	}
 }
 

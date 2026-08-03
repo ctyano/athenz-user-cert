@@ -252,6 +252,57 @@ func TestOIDCIssuerFlag(t *testing.T) {
 	})
 }
 
+func TestOIDCAccessTokenCacheExpiryFlag(t *testing.T) {
+	t.Run("uses config value as default", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{OIDCAccessTokenCacheExpiry: "20"})
+		if err := flagSet.Parse(nil); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+		if *flags.oidcCacheTTL != "20" {
+			t.Fatalf("expected cache expiry from config, got %q", *flags.oidcCacheTTL)
+		}
+	})
+
+	t.Run("overrides package default", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = "15"
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse([]string{"-oidc-access-token-cache-expiry-minutes", "20"}); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+
+		applyOIDCFlagOverrides(flags)
+
+		if oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES != "20" {
+			t.Fatalf("expected cache expiry from flag, got %q", oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES)
+		}
+	})
+
+	t.Run("accepts token expiry alias", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse([]string{"-oidc-token-expiry-minutes", "25"}); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+
+		applyOIDCFlagOverrides(flags)
+
+		if oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES != "25" {
+			t.Fatalf("expected cache expiry from alias flag, got %q", oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES)
+		}
+	})
+}
+
 func TestExecuteVersionCommand(t *testing.T) {
 	output := captureStdout(t, func() {
 		ExecuteVersionCommand(nil, flag.NewFlagSet("version", flag.ContinueOnError))
@@ -262,6 +313,9 @@ func TestExecuteVersionCommand(t *testing.T) {
 	}
 	if !strings.Contains(output, "CLI Open ID Connect Issuer:") {
 		t.Fatalf("expected OIDC output, got %q", output)
+	}
+	if !strings.Contains(output, "CLI Open ID Connect Access Token Cache Expiry:") {
+		t.Fatalf("expected OIDC cache expiry output, got %q", output)
 	}
 	if !strings.Contains(output, "CLI X.509 configuration for ZTS:") {
 		t.Fatalf("expected signer output, got %q", output)
@@ -1035,6 +1089,7 @@ func saveCmdGlobals() func() {
 	savedZTSSignURL := signer.DEFAULT_SIGNER_ZTS_SIGN_URL
 	savedZTSExternalMemberCertEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT
 	savedOIDCIssuer := oidc.DEFAULT_OIDC_ISSUER
+	savedOIDCAccessTokenCacheExpiry := oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES
 	savedAthenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
 	savedAthenzUserDomain := certificate.DEFAULT_ATHENZ_USER_DOMAIN
 	savedExternalIDDomain := certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN
@@ -1065,6 +1120,7 @@ func saveCmdGlobals() func() {
 		signer.DEFAULT_SIGNER_ZTS_SIGN_URL = savedZTSSignURL
 		signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT = savedZTSExternalMemberCertEndpoint
 		oidc.DEFAULT_OIDC_ISSUER = savedOIDCIssuer
+		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = savedOIDCAccessTokenCacheExpiry
 		certificate.DEFAULT_ATHENZ_CN_MODE = savedAthenzCNMode
 		certificate.DEFAULT_ATHENZ_USER_DOMAIN = savedAthenzUserDomain
 		certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = savedExternalIDDomain

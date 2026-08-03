@@ -29,6 +29,7 @@ athenz:
   external_id_domain: config.external.domain
 oidc:
   issuer: https://issuer.config.example
+  access_token_cache_expiry_minutes: 30
   username_claim: name
   external_id_claim: email
 zts:
@@ -45,6 +46,7 @@ zts:
 	t.Setenv("ATHENZ_CA_ENDPOINT", "https://env.example/zts/v1/ca")
 	t.Setenv("ATHENZ_ZTS_SIGN_URL", "https://zts.env.example/zts/v1")
 	t.Setenv("ATHENZ_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT", "https://zts.env.example/zts/v1/extmembercert")
+	t.Setenv("ATHENZ_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES", "45")
 
 	settings, err := Load()
 	if err != nil {
@@ -69,6 +71,9 @@ zts:
 	if settings.OIDCIssuer != "https://issuer.config.example" {
 		t.Fatalf("expected oidc issuer from config, got %q", settings.OIDCIssuer)
 	}
+	if settings.OIDCAccessTokenCacheExpiry != "45" {
+		t.Fatalf("expected oidc access token cache expiry from env, got %q", settings.OIDCAccessTokenCacheExpiry)
+	}
 	if settings.CNMode != "external" {
 		t.Fatalf("expected CN mode from config, got %q", settings.CNMode)
 	}
@@ -86,6 +91,9 @@ zts:
 	}
 	if oidc.DEFAULT_OIDC_ISSUER != "https://issuer.config.example" {
 		t.Fatalf("expected oidc issuer from config, got %q", oidc.DEFAULT_OIDC_ISSUER)
+	}
+	if oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES != "45" {
+		t.Fatalf("expected oidc access token cache expiry default from env, got %q", oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES)
 	}
 	if oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM != "email" {
 		t.Fatalf("expected external ID claim default from config, got %q", oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM)
@@ -135,6 +143,35 @@ zts:
 	}
 	if signer.DefaultZTSExternalMemberCertEndpoint() != "https://zts.config.example/zts/v1/extmembercert" {
 		t.Fatalf("expected zts external member certificate endpoint with appended path, got %q", signer.DefaultZTSExternalMemberCertEndpoint())
+	}
+}
+
+func TestLoadAcceptsZTSUserCertTokenExpiryAlias(t *testing.T) {
+	restore := saveDefaults()
+	defer restore()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`
+athenz:
+  zts:
+    user_cert:
+      token_expiry_minutes: 20
+`), 0600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	t.Setenv(envConfigPath, configPath)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if settings.OIDCAccessTokenCacheExpiry != "20" {
+		t.Fatalf("expected oidc access token cache expiry from alias, got %q", settings.OIDCAccessTokenCacheExpiry)
+	}
+	if oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES != "20" {
+		t.Fatalf("expected oidc access token cache expiry default from alias, got %q", oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES)
 	}
 }
 
@@ -224,6 +261,7 @@ func saveDefaults() func() {
 	oidcScopes := oidc.DEFAULT_OIDC_SCOPES
 	oidcListenAddress := oidc.DEFAULT_OIDC_LISTEN_ADDRESS
 	oidcAccessTokenPath := oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH
+	oidcAccessTokenCacheExpiry := oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES
 	oidcExternalIDClaim := oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM
 	oidcUsernameClaim := oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM
 	athenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
@@ -253,6 +291,7 @@ func saveDefaults() func() {
 		oidc.DEFAULT_OIDC_SCOPES = oidcScopes
 		oidc.DEFAULT_OIDC_LISTEN_ADDRESS = oidcListenAddress
 		oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH = oidcAccessTokenPath
+		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = oidcAccessTokenCacheExpiry
 		oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM = oidcExternalIDClaim
 		oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM = oidcUsernameClaim
 		certificate.DEFAULT_ATHENZ_CN_MODE = athenzCNMode

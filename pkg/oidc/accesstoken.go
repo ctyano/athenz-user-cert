@@ -21,17 +21,22 @@ import (
 	"time"
 )
 
-const oidcOutOfBandRedirectURL = "urn:ietf:wg:oauth:2.0:oob"
+const (
+	oidcOutOfBandRedirectURL                  = "urn:ietf:wg:oauth:2.0:oob"
+	defaultOIDCAccessTokenCacheExpiryMinutes  = int64(15)
+	defaultOIDCAccessTokenCacheExpiryDuration = time.Duration(defaultOIDCAccessTokenCacheExpiryMinutes) * time.Minute
+)
 
 var (
-	DEFAULT_OIDC_CLIENT_ID                = "athenz-user-cert"
-	DEFAULT_OIDC_CLIENT_SECRET            = "athenz-user-cert"
-	DEFAULT_OIDC_ISSUER                   = "http://127.0.0.1:5556/dex"
-	DEFAULT_OIDC_SCOPES                   = "openid email profile"
-	DEFAULT_OIDC_LISTEN_ADDRESS           = ":8080"
-	DEFAULT_OIDC_ACCESS_TOKEN_PATH        = ".athenz/.accesstoken"
-	DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM = "name"
-	DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM    = "name"
+	DEFAULT_OIDC_CLIENT_ID                         = "athenz-user-cert"
+	DEFAULT_OIDC_CLIENT_SECRET                     = "athenz-user-cert"
+	DEFAULT_OIDC_ISSUER                            = "http://127.0.0.1:5556/dex"
+	DEFAULT_OIDC_SCOPES                            = "openid email profile"
+	DEFAULT_OIDC_LISTEN_ADDRESS                    = ":8080"
+	DEFAULT_OIDC_ACCESS_TOKEN_PATH                 = ".athenz/.accesstoken"
+	DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = "15"
+	DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM          = "name"
+	DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM             = "name"
 
 	currentGOOS                   = runtime.GOOS
 	authCodeInputReader io.Reader = os.Stdin
@@ -84,35 +89,75 @@ func getCachedAccessToken(debug bool) (string, error) {
 }
 
 func isAccessTokenExpired(accessToken string, debug bool) (bool, error) {
-	expiry, err := getJWTExpiry(accessToken)
+	claims, err := parseJWTClaims(accessToken)
+	if err != nil {
+		return false, err
+	}
+
+	expiry, err := getJWTExpiry(claims)
+	if err != nil {
+		return false, fmt.Errorf("could not parse cached access token: %v", err)
+	}
+	issueTime, err := getJWTIssueTime(claims)
 	if err != nil {
 		return false, fmt.Errorf("could not parse cached access token: %v", err)
 	}
 
+	cacheExpiry := issueTime.Add(accessTokenCacheExpiryDuration())
+
 	if debug {
+		fmt.Printf("Cached access token issued at %s\n", issueTime.UTC().Format(time.RFC3339))
 		fmt.Printf("Cached access token expires at %s\n", expiry.UTC().Format(time.RFC3339))
+		fmt.Printf("Cached access token cache expires at %s\n", cacheExpiry.UTC().Format(time.RFC3339))
 	}
 
-	return !time.Now().Before(expiry), nil
+	now := time.Now()
+	return !now.Before(expiry) || !now.Before(cacheExpiry), nil
 }
 
-func getJWTExpiry(rawJWT string) (time.Time, error) {
-	claims, err := parseJWTClaims(rawJWT)
+func accessTokenCacheExpiryDuration() time.Duration {
+	minutes, err := parseAccessTokenCacheExpiryMinutes(DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES)
 	if err != nil {
-		return time.Time{}, err
+		return defaultOIDCAccessTokenCacheExpiryDuration
 	}
+	return time.Duration(minutes) * time.Minute
+}
 
-	expClaim, ok := claims["exp"]
+func parseAccessTokenCacheExpiryMinutes(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultOIDCAccessTokenCacheExpiryMinutes, nil
+	}
+	minutes, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if minutes <= 0 {
+		return 0, fmt.Errorf("must be positive")
+	}
+	return minutes, nil
+}
+
+func getJWTExpiry(claims map[string]any) (time.Time, error) {
+	return getJWTNumericDateClaim(claims, "exp")
+}
+
+func getJWTIssueTime(claims map[string]any) (time.Time, error) {
+	return getJWTNumericDateClaim(claims, "iat")
+}
+
+func getJWTNumericDateClaim(claims map[string]any, name string) (time.Time, error) {
+	claim, ok := claims[name]
 	if !ok {
-		return time.Time{}, fmt.Errorf("no exp claim in jwt")
+		return time.Time{}, fmt.Errorf("no %s claim in jwt", name)
 	}
 
-	expUnix, err := parseJWTNumericDate(expClaim)
+	unixTime, err := parseJWTNumericDate(claim)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("invalid exp claim in jwt: %v", err)
+		return time.Time{}, fmt.Errorf("invalid %s claim in jwt: %v", name, err)
 	}
 
-	return time.Unix(expUnix, 0), nil
+	return time.Unix(unixTime, 0), nil
 }
 
 func parseJWTClaims(rawJWT string) (map[string]any, error) {

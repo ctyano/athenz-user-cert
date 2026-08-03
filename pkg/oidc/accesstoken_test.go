@@ -198,6 +198,7 @@ func TestGetCachedAccessTokenReturnsValidJWT(t *testing.T) {
 
 	token := makeTestJWT(t, map[string]any{
 		"exp":  time.Now().Add(10 * time.Minute).Unix(),
+		"iat":  time.Now().Add(-1 * time.Minute).Unix(),
 		"name": "alice",
 	})
 	writeCachedAccessToken(t, token)
@@ -216,6 +217,7 @@ func TestGetCachedAccessTokenRejectsExpiredJWT(t *testing.T) {
 
 	writeCachedAccessToken(t, makeTestJWT(t, map[string]any{
 		"exp": time.Now().Add(-1 * time.Minute).Unix(),
+		"iat": time.Now().Add(-2 * time.Minute).Unix(),
 	}))
 
 	_, err := getCachedAccessToken(false)
@@ -267,11 +269,72 @@ func TestGetCachedAccessTokenRejectsJWTWithoutExpiry(t *testing.T) {
 	}
 }
 
+func TestGetCachedAccessTokenRejectsJWTWithoutIssueTime(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	writeCachedAccessToken(t, makeTestJWT(t, map[string]any{
+		"exp":  time.Now().Add(10 * time.Minute).Unix(),
+		"name": "alice",
+	}))
+
+	_, err := getCachedAccessToken(false)
+	if err == nil {
+		t.Fatal("expected cached token without iat to return an error")
+	}
+	if !strings.Contains(err.Error(), "no iat claim") {
+		t.Fatalf("expected missing iat error, got %v", err)
+	}
+}
+
+func TestGetCachedAccessTokenRejectsJWTOlderThanCacheExpiry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	writeCachedAccessToken(t, makeTestJWT(t, map[string]any{
+		"exp":  time.Now().Add(time.Hour).Unix(),
+		"iat":  time.Now().Add(-16 * time.Minute).Unix(),
+		"name": "alice",
+	}))
+
+	_, err := getCachedAccessToken(false)
+	if err == nil {
+		t.Fatal("expected stale cached token to return an error")
+	}
+	if !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("expected expiration error, got %v", err)
+	}
+}
+
+func TestGetCachedAccessTokenUsesConfiguredCacheExpiry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	original := DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES
+	DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = "60"
+	t.Cleanup(func() {
+		DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = original
+	})
+
+	token := makeTestJWT(t, map[string]any{
+		"exp":  time.Now().Add(time.Hour).Unix(),
+		"iat":  time.Now().Add(-30 * time.Minute).Unix(),
+		"name": "alice",
+	})
+	writeCachedAccessToken(t, token)
+
+	got, err := getCachedAccessToken(false)
+	if err != nil {
+		t.Fatalf("getCachedAccessToken returned error: %v", err)
+	}
+	if got != token {
+		t.Fatalf("expected cached token %q, got %q", token, got)
+	}
+}
+
 func TestGetAuthAccessTokenUsesValidCachedToken(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	token := makeTestJWT(t, map[string]any{
 		"exp":  time.Now().Add(10 * time.Minute).Unix(),
+		"iat":  time.Now().Add(-1 * time.Minute).Unix(),
 		"name": "alice",
 	})
 	writeCachedAccessToken(t, token)
