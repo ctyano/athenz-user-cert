@@ -78,6 +78,7 @@ oidc:
   client_id: athenz-user-cert
   scopes: openid email profile
   listen_address: :8080
+  access_token_cache_expiry_minutes: 15
   external_id_claim: email
 
 zts:
@@ -87,8 +88,9 @@ zts:
 ```
 
 Common environment variable overrides include `ATHENZ_API_URL`,
-`ATHENZ_CA_ENDPOINT`, `ATHENZ_SIGNER_TLS_CA_PATH`, `ATHENZ_OIDC_ISSUER`, and
-`ATHENZ_ZTS_SIGN_URL`. Use `ATHENZ_CN_MODE` to choose the derived Athenz User
+`ATHENZ_CA_ENDPOINT`, `ATHENZ_SIGNER_TLS_CA_PATH`, `ATHENZ_OIDC_ISSUER`,
+`ATHENZ_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES`, and `ATHENZ_ZTS_SIGN_URL`.
+Use `ATHENZ_CN_MODE` to choose the derived Athenz User
 Certificate CN mode: `user` produces `<user_domain>.<username>`, and `external`
 produces `<external_id_domain>:ext.<external_id>`. For the `zts` signer,
 `zts.sign_url` / `ATHENZ_ZTS_SIGN_URL` is treated as the ZTS API base URL:
@@ -100,4 +102,10 @@ the external member certificate endpoint. Use
 `ATHENZ_EXTERNAL_ID_CLAIM` for external mode.
 
 Use `-oidc-issuer https://issuer.example.com` to override the OIDC issuer for a
-single CLI execution.
+single CLI execution. Cached access tokens are reused only while both their JWT
+`exp` claim and `iat` age are valid. The maximum cache age defaults to 15 minutes
+and can be changed with `-oidc-access-token-cache-expiry-minutes`,
+`-oidc-token-expiry-minutes`, `ATHENZ_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES`,
+`ATHENZ_OIDC_TOKEN_EXPIRY_MINUTES`, `oidc.access_token_cache_expiry_minutes`,
+`oidc.token_expiry_minutes`, or the ZTS-compatible config path
+`athenz.zts.user_cert.token_expiry_minutes`.

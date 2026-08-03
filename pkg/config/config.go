@@ -25,6 +25,7 @@ type Settings struct {
 	CAEndpoint                 string
 	SignerTLSCAPath            string
 	OIDCIssuer                 string
+	OIDCAccessTokenCacheExpiry string
 	CNMode                     string
 	UserClaim                  string
 	UserDomain                 string
@@ -56,6 +57,7 @@ func Load() (*Settings, error) {
 		CAEndpoint:                 stringValue(values, []string{"ca_endpoint", "ca-endpoint", "signer.ca_endpoint", "signer.ca-endpoint"}, "ATHENZ_CA_ENDPOINT"),
 		SignerTLSCAPath:            stringValue(values, []string{"signer_tls_ca_path", "signer-tls-ca-path", "signer.tls_ca_path", "signer.tls-ca-path"}, "ATHENZ_SIGNER_TLS_CA_PATH"),
 		OIDCIssuer:                 stringValue(values, []string{"oidc.issuer", "issuer"}, "ATHENZ_OIDC_ISSUER", "ATHENZ_ISSUER"),
+		OIDCAccessTokenCacheExpiry: stringValue(values, oidcAccessTokenCacheExpiryKeys(), "ATHENZ_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES", "ATHENZ_OIDC_TOKEN_EXPIRY_MINUTES"),
 		CNMode:                     stringValue(values, cnModeKeys(), "ATHENZ_CN_MODE"),
 		UserClaim:                  userClaim,
 		UserDomain:                 stringValue(values, userDomainKeys(), "ATHENZ_USER_DOMAIN"),
@@ -107,6 +109,7 @@ func applyPackageDefaults(values map[string]any) {
 	setString(values, &oidc.DEFAULT_OIDC_SCOPES, []string{"oidc.scopes", "scopes"}, "ATHENZ_OIDC_SCOPES")
 	setString(values, &oidc.DEFAULT_OIDC_LISTEN_ADDRESS, []string{"oidc.listen_address", "oidc.listen-address", "listen_address", "listen-address"}, "ATHENZ_OIDC_LISTEN_ADDRESS")
 	setString(values, &oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH, []string{"oidc.access_token_path", "oidc.access-token-path", "access_token_path", "access-token-path"}, "ATHENZ_OIDC_ACCESS_TOKEN_PATH")
+	setString(values, &oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES, oidcAccessTokenCacheExpiryKeys(), "ATHENZ_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES", "ATHENZ_OIDC_TOKEN_EXPIRY_MINUTES")
 	setString(values, &oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM, userClaimKeys(), "ATHENZ_OIDC_USERNAME_CLAIM", "ATHENZ_USERNAME_CLAIM")
 	setString(values, &oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM, externalIDClaimKeys(), "ATHENZ_EXTERNAL_ID_CLAIM", "ATHENZ_OIDC_EXTERNAL_ID_CLAIM")
 
@@ -156,6 +159,23 @@ func ztsExternalMemberCertEndpointKeys() []string {
 		"zts.external-member-cert-endpoint",
 		"signer.zts.external_member_cert_endpoint",
 		"signer.zts.external-member-cert-endpoint",
+	}
+}
+
+func oidcAccessTokenCacheExpiryKeys() []string {
+	return []string{
+		"oidc.access_token_cache_expiry_minutes",
+		"oidc.access-token-cache-expiry-minutes",
+		"oidc.token_expiry_minutes",
+		"oidc.token-expiry-minutes",
+		"access_token_cache_expiry_minutes",
+		"access-token-cache-expiry-minutes",
+		"token_expiry_minutes",
+		"token-expiry-minutes",
+		"athenz.zts.user_cert.token_expiry_minutes",
+		"athenz.zts.user_cert.token-expiry-minutes",
+		"athenz.zts.user-cert.token_expiry_minutes",
+		"athenz.zts.user-cert.token-expiry-minutes",
 	}
 }
 
