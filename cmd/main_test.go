@@ -303,6 +303,60 @@ func TestOIDCAccessTokenCacheExpiryFlag(t *testing.T) {
 	})
 }
 
+func TestOIDCCloseWindowDelayFlag(t *testing.T) {
+	t.Run("uses package default", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY = "10"
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse(nil); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+		if *flags.oidcCloseWindowDelay != 10 {
+			t.Fatalf("expected close window delay from package default, got %d", *flags.oidcCloseWindowDelay)
+		}
+	})
+
+	t.Run("overrides package default", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+
+		oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY = "0"
+		flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := addCommandFlags(flagSet, &appconfig.Settings{})
+		if err := flagSet.Parse([]string{"-oidc-close-window-delay", "7"}); err != nil {
+			t.Fatalf("flag parse returned error: %v", err)
+		}
+
+		applyOIDCFlagOverrides(flags)
+
+		if oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY != "7" {
+			t.Fatalf("expected close window delay from flag, got %q", oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY)
+		}
+	})
+
+	t.Run("execute applies override before authentication", func(t *testing.T) {
+		restore := saveCmdGlobals()
+		defer restore()
+		installDefaultCommandStubs(t)
+
+		getAuthAccessToken = func(responseMode *string, debug *bool) (string, error) {
+			if oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY != "7" {
+				t.Fatalf("expected close window delay override before auth, got %q", oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY)
+			}
+			return "", io.EOF
+		}
+
+		var output bytes.Buffer
+		err := execute([]string{"-oidc-close-window-delay", "7"}, &output, &appconfig.Settings{})
+		if err == nil {
+			t.Fatal("expected execute to fail after auth stub")
+		}
+	})
+}
+
 func TestExecuteVersionCommand(t *testing.T) {
 	output := captureStdout(t, func() {
 		ExecuteVersionCommand(nil, flag.NewFlagSet("version", flag.ContinueOnError))
@@ -1090,6 +1144,7 @@ func saveCmdGlobals() func() {
 	savedZTSExternalMemberCertEndpoint := signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT
 	savedOIDCIssuer := oidc.DEFAULT_OIDC_ISSUER
 	savedOIDCAccessTokenCacheExpiry := oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES
+	savedOIDCCloseWindowDelay := oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY
 	savedAthenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
 	savedAthenzUserDomain := certificate.DEFAULT_ATHENZ_USER_DOMAIN
 	savedExternalIDDomain := certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN
@@ -1121,6 +1176,7 @@ func saveCmdGlobals() func() {
 		signer.DEFAULT_SIGNER_ZTS_EXTERNAL_MEMBER_CERT_ENDPOINT = savedZTSExternalMemberCertEndpoint
 		oidc.DEFAULT_OIDC_ISSUER = savedOIDCIssuer
 		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = savedOIDCAccessTokenCacheExpiry
+		oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY = savedOIDCCloseWindowDelay
 		certificate.DEFAULT_ATHENZ_CN_MODE = savedAthenzCNMode
 		certificate.DEFAULT_ATHENZ_USER_DOMAIN = savedAthenzUserDomain
 		certificate.DEFAULT_ATHENZ_EXTERNAL_ID_DOMAIN = savedExternalIDDomain

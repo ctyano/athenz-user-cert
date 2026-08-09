@@ -110,6 +110,7 @@ func applyPackageDefaults(values map[string]any) {
 	setString(values, &oidc.DEFAULT_OIDC_LISTEN_ADDRESS, []string{"oidc.listen_address", "oidc.listen-address", "listen_address", "listen-address"}, "ATHENZ_OIDC_LISTEN_ADDRESS")
 	setString(values, &oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH, []string{"oidc.access_token_path", "oidc.access-token-path", "access_token_path", "access-token-path"}, "ATHENZ_OIDC_ACCESS_TOKEN_PATH")
 	setString(values, &oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES, oidcAccessTokenCacheExpiryKeys(), "ATHENZ_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES", "ATHENZ_OIDC_TOKEN_EXPIRY_MINUTES")
+	setString(values, &oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY, []string{"oidc.close_window_delay", "oidc.close-window-delay", "close_window_delay", "close-window-delay"}, "ATHENZ_OIDC_CLOSE_WINDOW_DELAY")
 	setString(values, &oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM, userClaimKeys(), "ATHENZ_OIDC_USERNAME_CLAIM", "ATHENZ_USERNAME_CLAIM")
 	setString(values, &oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM, externalIDClaimKeys(), "ATHENZ_EXTERNAL_ID_CLAIM", "ATHENZ_OIDC_EXTERNAL_ID_CLAIM")
 

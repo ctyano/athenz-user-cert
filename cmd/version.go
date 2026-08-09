@@ -28,6 +28,7 @@ func ExecuteVersionCommand(arg []string, versionFlagSet *flag.FlagSet) {
 	fmt.Printf("  CLI Open ID Connect Client ID: %s\n", oidc.DEFAULT_OIDC_CLIENT_ID)
 	fmt.Printf("  CLI Open ID Connect Scopes: %s\n", oidc.DEFAULT_OIDC_SCOPES)
 	fmt.Printf("  CLI Open ID Connect Client Listening Address: %s\n", oidc.DEFAULT_OIDC_LISTEN_ADDRESS)
+	fmt.Printf("  CLI Open ID Connect Close Window Delay: %s seconds\n", oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY)
 	fmt.Printf("  CLI Open ID Connect Access Token Stored Path: $HOME/%s\n", oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH)
 	fmt.Printf("  CLI Open ID Connect Access Token Cache Validation: JWT exp claim and iat max age\n")
 	fmt.Printf("  CLI Open ID Connect Access Token Cache Expiry: %s minutes\n", oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES)

@@ -80,6 +80,7 @@ oidc:
   listen_address: :8080
   access_token_cache_expiry_minutes: 15
   external_id_claim: email
+  close_window_delay: 0
 
 zts:
   sign_url: https://zts.example.com/zts/v1
@@ -100,6 +101,17 @@ values ending in `/usercert` are normalized. Use `-zts-external-member-cert-endp
 the external member certificate endpoint. Use
 `ATHENZ_USER_DOMAIN` for user mode. Use `ATHENZ_EXTERNAL_ID_DOMAIN` and
 `ATHENZ_EXTERNAL_ID_CLAIM` for external mode.
+
+The OIDC callback server listens on `oidc.listen_address` (`:8080` by default).
+When that port is already in use the server automatically shifts to the next
+free port. Use `oidc.close_window_delay` / `ATHENZ_OIDC_CLOSE_WINDOW_DELAY` /
+`-oidc-close-window-delay` to opt into auto-closing the browser tab after a
+successful callback: the success page shows a countdown and calls
+`window.close()`, and on macOS a detached AppleScript also closes the Chrome or
+Safari tab whose URL starts with the local callback prefix (best-effort; the
+first run may ask for the macOS Automation permission, and Chrome and Safari
+are the only browsers covered). The default `0` disables auto-close and keeps
+the static "You may close this window now." message.
 
 Use `-oidc-issuer https://issuer.example.com` to override the OIDC issuer for a
 single CLI execution. Cached access tokens are reused only while both their JWT

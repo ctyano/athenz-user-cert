@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ctyano/athenz-user-cert/pkg/certificate"
@@ -241,16 +242,17 @@ type signerCommandFlags struct {
 }
 
 type mainCommandFlags struct {
-	signer        signerCommandFlags
-	dnsarg        *string
-	emailarg      *string
-	iparg         *string
-	uriarg        *string
-	responseMode  *string
-	oidcIssuer    *string
-	oidcCacheTTL  *string
-	oidcUser      *string
-	oidcPassStdin *bool
+	signer               signerCommandFlags
+	dnsarg               *string
+	emailarg             *string
+	iparg                *string
+	uriarg               *string
+	responseMode         *string
+	oidcIssuer           *string
+	oidcCacheTTL         *string
+	oidcCloseWindowDelay *int
+	oidcUser             *string
+	oidcPassStdin        *bool
 }
 
 func addCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings) mainCommandFlags {
@@ -265,9 +267,18 @@ func addCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings) mainCommand
 	flags.oidcIssuer = flagSet.String("oidc-issuer", defaultString(cfg.OIDCIssuer, oidc.DEFAULT_OIDC_ISSUER), "OpenID Connect issuer URL")
 	flags.oidcCacheTTL = flagSet.String("oidc-access-token-cache-expiry-minutes", defaultString(cfg.OIDCAccessTokenCacheExpiry, oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES), "Maximum age in minutes for cached OIDC access tokens")
 	flagSet.StringVar(flags.oidcCacheTTL, "oidc-token-expiry-minutes", *flags.oidcCacheTTL, "Alias for -oidc-access-token-cache-expiry-minutes")
+	flags.oidcCloseWindowDelay = flagSet.Int("oidc-close-window-delay", parseOIDCCloseWindowDelay(oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY), "Seconds after which the OIDC callback success page auto-closes its browser tab (0 = disabled)")
 	flags.oidcUser = flagSet.String("oidc-user", "", "OIDC user for password grant")
 	flags.oidcPassStdin = flagSet.Bool("oidc-password-stdin", false, "Read the OIDC password for password grant from stdin")
 	return flags
+}
+
+func parseOIDCCloseWindowDelay(value string) int {
+	delay, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || delay < 0 {
+		return 0
+	}
+	return delay
 }
 
 func addSignerCommandFlags(flagSet *flag.FlagSet, cfg *appconfig.Settings, certType string) signerCommandFlags {
@@ -311,6 +322,9 @@ func applyOIDCFlagOverrides(flags mainCommandFlags) {
 	}
 	if flags.oidcCacheTTL != nil {
 		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = strings.TrimSpace(*flags.oidcCacheTTL)
+	}
+	if flags.oidcCloseWindowDelay != nil {
+		oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY = strconv.Itoa(*flags.oidcCloseWindowDelay)
 	}
 }
 

@@ -118,6 +118,51 @@ zts:
 	}
 }
 
+func TestLoadAppliesCloseWindowDelay(t *testing.T) {
+	restore := saveDefaults()
+	defer restore()
+
+	t.Run("from config file", func(t *testing.T) {
+		home := t.TempDir()
+		configPath := filepath.Join(home, "config.yaml")
+		if err := os.WriteFile(configPath, []byte(`
+oidc:
+  close_window_delay: 7
+`), 0600); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		t.Setenv(envConfigPath, configPath)
+		t.Setenv("HOME", home)
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY != "7" {
+			t.Fatalf("expected close window delay from config, got %q", oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY)
+		}
+	})
+
+	t.Run("from environment", func(t *testing.T) {
+		home := t.TempDir()
+		configPath := filepath.Join(home, "config.yaml")
+		if err := os.WriteFile(configPath, []byte(""), 0600); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+
+		t.Setenv(envConfigPath, configPath)
+		t.Setenv("HOME", home)
+		t.Setenv("ATHENZ_OIDC_CLOSE_WINDOW_DELAY", "5")
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY != "5" {
+			t.Fatalf("expected close window delay from env, got %q", oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY)
+		}
+	})
+}
+
 func TestLoadAppendsZTSExternalMemberCertEndpointPathToConfiguredSignURL(t *testing.T) {
 	restore := saveDefaults()
 	defer restore()
@@ -262,6 +307,7 @@ func saveDefaults() func() {
 	oidcListenAddress := oidc.DEFAULT_OIDC_LISTEN_ADDRESS
 	oidcAccessTokenPath := oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH
 	oidcAccessTokenCacheExpiry := oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES
+	oidcCloseWindowDelay := oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY
 	oidcExternalIDClaim := oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM
 	oidcUsernameClaim := oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM
 	athenzCNMode := certificate.DEFAULT_ATHENZ_CN_MODE
@@ -292,6 +338,7 @@ func saveDefaults() func() {
 		oidc.DEFAULT_OIDC_LISTEN_ADDRESS = oidcListenAddress
 		oidc.DEFAULT_OIDC_ACCESS_TOKEN_PATH = oidcAccessTokenPath
 		oidc.DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = oidcAccessTokenCacheExpiry
+		oidc.DEFAULT_OIDC_CLOSE_WINDOW_DELAY = oidcCloseWindowDelay
 		oidc.DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM = oidcExternalIDClaim
 		oidc.DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM = oidcUsernameClaim
 		certificate.DEFAULT_ATHENZ_CN_MODE = athenzCNMode

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGeneratePKCEParametersProducesVerifierAndChallenge(t *testing.T) {
@@ -398,7 +400,7 @@ func TestGetAuthCodeResultLinuxUsesManualFlow(t *testing.T) {
 		automaticFlowCalled = true
 		return nil
 	}
-	waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+	waitForCodeServerFunc = func(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
 		automaticFlowCalled = true
 		return authCodeResult{}, fmt.Errorf("automatic callback flow should not be used on linux")
 	}
@@ -443,13 +445,32 @@ func TestGetAuthCodeResultAutomaticFlow(t *testing.T) {
 
 			currentGOOS = tc.os
 			openBrowserCalled := false
+			var resolvedPort int
+			reservePortFunc = func(basePort int) (net.Listener, int, error) {
+				if basePort != 8080 {
+					t.Fatalf("expected base port 8080, got %d", basePort)
+				}
+				listener, port := reserveTestPort(t)
+				resolvedPort = port
+				return listener, port, nil
+			}
 			openBrowserFunc = func(authCodeURL string) error {
 				openBrowserCalled = true
+				parsedURL, err := url.Parse(authCodeURL)
+				if err != nil {
+					t.Fatalf("failed to parse auth url: %v", err)
+				}
+				if got := parsedURL.Query().Get("redirect_uri"); got != fmt.Sprintf("http://127.0.0.1:%d", resolvedPort) {
+					t.Fatalf("expected redirect_uri to use resolved port %d, got %q", resolvedPort, got)
+				}
 				return nil
 			}
-			waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
-				if listenAddress != DEFAULT_OIDC_LISTEN_ADDRESS {
-					t.Fatalf("expected listen address %q, got %q", DEFAULT_OIDC_LISTEN_ADDRESS, listenAddress)
+			closeBrowserTabFunc = func(urlPrefix string, delaySecs int) {
+				t.Fatal("expected no tab close when the close window delay is disabled")
+			}
+			waitForCodeServerFunc = func(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
+				if closeWindowDelay != 0 {
+					t.Fatalf("expected close window delay 0, got %d", closeWindowDelay)
 				}
 				return authCodeResult{Code: "test-code", State: "test-state", AttestationData: "code=test-code&state=test-state"}, nil
 			}
@@ -486,7 +507,11 @@ func TestGetAuthCodeResultAutomaticFlowErrors(t *testing.T) {
 
 		currentGOOS = "darwin"
 		openBrowserFunc = func(authCodeURL string) error { return nil }
-		waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+		reservePortFunc = func(basePort int) (net.Listener, int, error) {
+			listener, port := reserveTestPort(t)
+			return listener, port, nil
+		}
+		waitForCodeServerFunc = func(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
 			return authCodeResult{}, io.EOF
 		}
 
@@ -511,7 +536,11 @@ func TestGetAuthCodeResultAutomaticFlowErrors(t *testing.T) {
 
 		currentGOOS = "darwin"
 		openBrowserFunc = func(authCodeURL string) error { return nil }
-		waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+		reservePortFunc = func(basePort int) (net.Listener, int, error) {
+			listener, port := reserveTestPort(t)
+			return listener, port, nil
+		}
+		waitForCodeServerFunc = func(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
 			return authCodeResult{State: "test-state"}, nil
 		}
 
@@ -695,7 +724,7 @@ func TestOIDCWrapperSuccessPaths(t *testing.T) {
 			t.Fatal("linux should not open browser for automatic callback flow")
 			return nil
 		}
-		waitForCodeServerFunc = func(listenAddress string) (authCodeResult, error) {
+		waitForCodeServerFunc = func(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
 			t.Fatal("linux should not start automatic callback server")
 			return authCodeResult{}, nil
 		}
@@ -756,10 +785,323 @@ func TestAuthCodeResultFromRequest(t *testing.T) {
 	})
 }
 
-func TestWaitForCodeServerRejectsInvalidListenAddress(t *testing.T) {
-	if _, err := waitForCodeServer("bad address"); err == nil {
-		t.Fatal("expected invalid listen address to return an error")
+func TestListenAddressBasePort(t *testing.T) {
+	tests := []struct {
+		name          string
+		listenAddress string
+		want          int
+		wantErr       bool
+	}{
+		{name: "default port only", listenAddress: ":8080", want: 8080},
+		{name: "host and port", listenAddress: "127.0.0.1:9000", want: 9000},
+		{name: "empty", listenAddress: "", wantErr: true},
+		{name: "missing port", listenAddress: "127.0.0.1", wantErr: true},
+		{name: "non numeric port", listenAddress: ":abc", wantErr: true},
 	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := listenAddressBasePort(tc.listenAddress)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("listenAddressBasePort returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("expected port %d, got %d", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestReserveCallbackListenerReturnsBasePortWhenFree(t *testing.T) {
+	listener, port := reserveTestPort(t)
+	listener.Close()
+
+	reserved, reservedPort, err := reserveCallbackListener(port)
+	if err != nil {
+		t.Fatalf("reserveCallbackListener returned error: %v", err)
+	}
+	defer reserved.Close()
+
+	if reservedPort != port {
+		t.Fatalf("expected base port %d to be reused, got %d", port, reservedPort)
+	}
+}
+
+func TestReserveCallbackListenerShiftsPortWhenOccupied(t *testing.T) {
+	listener, port := reserveTestPort(t)
+	defer listener.Close()
+
+	reserved, reservedPort, err := reserveCallbackListener(port)
+	if err != nil {
+		t.Fatalf("reserveCallbackListener returned error: %v", err)
+	}
+	defer reserved.Close()
+
+	if reservedPort <= port {
+		t.Fatalf("expected a shifted port above %d, got %d", port, reservedPort)
+	}
+}
+
+func TestReserveCallbackListenerExhaustsAttempts(t *testing.T) {
+	savedAttempts := maxPortSearchAttempts
+	maxPortSearchAttempts = 2
+	defer func() { maxPortSearchAttempts = savedAttempts }()
+
+	listener, port := reserveTestPort(t)
+	defer listener.Close()
+
+	blocker, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+1))
+	if err != nil {
+		t.Fatalf("failed to bind blocker port: %v", err)
+	}
+	defer blocker.Close()
+
+	if _, _, err := reserveCallbackListener(port); err == nil {
+		t.Fatal("expected reservation to fail once all candidate ports are occupied")
+	}
+}
+
+func TestWaitForCodeServerServesStaticClosePage(t *testing.T) {
+	listener, port := reserveTestPort(t)
+	defer listener.Close()
+
+	resultCh := make(chan authCodeResult, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := waitForCodeServer(listener, 0)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+
+	waitForServerReady(t, port)
+
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/?code=test-code&state=test-state", port))
+	if err != nil {
+		t.Fatalf("failed to call callback: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read callback response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("expected text/html content type, got %q", resp.Header.Get("Content-Type"))
+	}
+	if !strings.Contains(string(body), "You may close this window now.") {
+		t.Fatal("expected the static close message when auto-close is disabled")
+	}
+	if strings.Contains(string(body), "window.close()") {
+		t.Fatal("expected no auto-close script when auto-close is disabled")
+	}
+
+	select {
+	case result := <-resultCh:
+		if result.Code != "test-code" {
+			t.Fatalf("expected auth code, got %q", result.Code)
+		}
+	case err := <-errCh:
+		t.Fatalf("waitForCodeServer returned error: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for waitForCodeServer result")
+	}
+}
+
+func TestWaitForCodeServerServesAutoClosePage(t *testing.T) {
+	listener, port := reserveTestPort(t)
+	defer listener.Close()
+
+	resultCh := make(chan authCodeResult, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := waitForCodeServer(listener, 7)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+
+	waitForServerReady(t, port)
+
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/?code=test-code&state=test-state", port))
+	if err != nil {
+		t.Fatalf("failed to call callback: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read callback response: %v", err)
+	}
+
+	if !strings.Contains(string(body), "This window will close in 7 seconds.") {
+		t.Fatal("expected the countdown message when an auto-close delay is set")
+	}
+	if !strings.Contains(string(body), "var secs = 7;") {
+		t.Fatal("expected the configured delay to be embedded in the auto-close script")
+	}
+	if !strings.Contains(string(body), "el.textContent = 'You may close this window now.';") {
+		t.Fatal("expected the auto-close script to fall back to the static message before closing")
+	}
+	if strings.Contains(string(body), "__CLOSE_MSG__") || strings.Contains(string(body), "__CLOSE_SCRIPT__") {
+		t.Fatal("expected all template placeholders to be replaced")
+	}
+
+	select {
+	case result := <-resultCh:
+		if result.Code != "test-code" {
+			t.Fatalf("expected auth code, got %q", result.Code)
+		}
+	case err := <-errCh:
+		t.Fatalf("waitForCodeServer returned error: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for waitForCodeServer result")
+	}
+}
+
+func TestCloseBrowserTabNoopOnNonDarwin(t *testing.T) {
+	restore := saveOIDCFlowGlobals()
+	defer restore()
+
+	currentGOOS = "linux"
+	osascriptStartFunc = func(script string) error {
+		t.Fatal("expected no osascript invocation on non-darwin platforms")
+		return nil
+	}
+
+	closeBrowserTab("http://127.0.0.1:8080", 7)
+}
+
+func TestCloseBrowserTabBuildsScriptOnDarwin(t *testing.T) {
+	restore := saveOIDCFlowGlobals()
+	defer restore()
+
+	currentGOOS = "darwin"
+	var capturedScript string
+	osascriptStartFunc = func(script string) error {
+		capturedScript = script
+		return nil
+	}
+
+	closeBrowserTab("http://127.0.0.1:8080", 7)
+
+	if !strings.Contains(capturedScript, "delay 7.5") {
+		t.Fatalf("expected the script to wait out the page countdown, got %q", capturedScript)
+	}
+	if !strings.Contains(capturedScript, "http://127.0.0.1:8080") {
+		t.Fatalf("expected the script to match the callback URL prefix, got %q", capturedScript)
+	}
+	if !strings.Contains(capturedScript, "Google Chrome") || !strings.Contains(capturedScript, "Safari") {
+		t.Fatalf("expected the script to cover Chrome and Safari, got %q", capturedScript)
+	}
+}
+
+func TestGetAuthCodeResultAutomaticFlowFiresTabClose(t *testing.T) {
+	restore := saveOIDCFlowGlobals()
+	defer restore()
+
+	currentGOOS = "darwin"
+	DEFAULT_OIDC_CLOSE_WINDOW_DELAY = "7"
+
+	var resolvedPort int
+	reservePortFunc = func(basePort int) (net.Listener, int, error) {
+		listener, port := reserveTestPort(t)
+		resolvedPort = port
+		return listener, port, nil
+	}
+	openBrowserFunc = func(authCodeURL string) error { return nil }
+	closeCalls := make(chan string, 1)
+	closeBrowserTabFunc = func(urlPrefix string, delaySecs int) {
+		closeCalls <- fmt.Sprintf("%s|%d", urlPrefix, delaySecs)
+	}
+	waitForCodeServerFunc = func(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
+		if closeWindowDelay != 7 {
+			t.Fatalf("expected close window delay 7, got %d", closeWindowDelay)
+		}
+		return authCodeResult{Code: "test-code", State: "test-state", AttestationData: "code=test-code&state=test-state"}, nil
+	}
+
+	conf := &oauthConfig{
+		AuthURL:      "https://issuer.example/auth",
+		RedirectURL:  "http://127.0.0.1:8080",
+		ClientID:     "client-id",
+		State:        "test-state",
+		ResponseType: "code",
+		Scopes:       []string{"openid"},
+	}
+	responseMode := "query"
+
+	result, err := getAuthCodeResult(conf, &responseMode)
+	if err != nil {
+		t.Fatalf("getAuthCodeResult returned error: %v", err)
+	}
+	if result.Code != "test-code" {
+		t.Fatalf("expected code to be returned, got %q", result.Code)
+	}
+
+	select {
+	case call := <-closeCalls:
+		want := fmt.Sprintf("http://127.0.0.1:%d|7", resolvedPort)
+		if call != want {
+			t.Fatalf("expected tab close call %q, got %q", want, call)
+		}
+	default:
+		t.Fatal("expected the tab close to fire when an auto-close delay is set")
+	}
+}
+
+func TestCloseWindowHTML(t *testing.T) {
+	page := closeWindowHTML(0)
+	if !strings.Contains(page, "Authentication successful") {
+		t.Error("closeWindowHTML should contain the success message")
+	}
+	if !strings.Contains(page, "You may close this window now.") {
+		t.Error("closeWindowHTML should contain the static close instruction")
+	}
+	if strings.Contains(page, "window.close()") {
+		t.Error("closeWindowHTML with no delay should not contain the auto-close script")
+	}
+}
+
+func TestCloseWindowHTMLAutoClose(t *testing.T) {
+	page := closeWindowHTML(5)
+	if !strings.Contains(page, "This window will close in 5 seconds.") {
+		t.Error("closeWindowHTML with a delay should contain the countdown message")
+	}
+	if !strings.Contains(page, "var secs = 5;") {
+		t.Error("closeWindowHTML should embed the configured delay in the script")
+	}
+	if !strings.Contains(page, "el.textContent = 'You may close this window now.';") {
+		t.Error("closeWindowHTML script should fall back to the static close message before attempting window.close()")
+	}
+	if strings.Contains(page, "__CLOSE_MSG__") || strings.Contains(page, "__CLOSE_SCRIPT__") {
+		t.Error("closeWindowHTML should replace all template placeholders")
+	}
+}
+
+func waitForServerReady(t *testing.T, port int) {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 50*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("server on port %d did not start in time", port)
 }
 
 func saveOIDCFlowGlobals() func() {
@@ -767,6 +1109,10 @@ func saveOIDCFlowGlobals() func() {
 	savedInput := authCodeInputReader
 	savedOpenBrowser := openBrowserFunc
 	savedWaitForCodeServer := waitForCodeServerFunc
+	savedCloseBrowserTab := closeBrowserTabFunc
+	savedReservePort := reservePortFunc
+	savedOsaScriptStart := osascriptStartFunc
+	savedCloseWindowDelay := DEFAULT_OIDC_CLOSE_WINDOW_DELAY
 	savedDiscovery := oidcDiscoveryFunc
 	savedBuildPKCE := buildPKCEOAuthConfigFunc
 	savedGetAuthCodeResult := getAuthCodeResultFunc
@@ -778,12 +1124,28 @@ func saveOIDCFlowGlobals() func() {
 		authCodeInputReader = savedInput
 		openBrowserFunc = savedOpenBrowser
 		waitForCodeServerFunc = savedWaitForCodeServer
+		closeBrowserTabFunc = savedCloseBrowserTab
+		reservePortFunc = savedReservePort
+		osascriptStartFunc = savedOsaScriptStart
+		DEFAULT_OIDC_CLOSE_WINDOW_DELAY = savedCloseWindowDelay
 		oidcDiscoveryFunc = savedDiscovery
 		buildPKCEOAuthConfigFunc = savedBuildPKCE
 		getAuthCodeResultFunc = savedGetAuthCodeResult
 		exchangeAuthCodeFunc = savedExchange
 		randomReadFunc = savedRandomRead
 	}
+}
+
+// reserveTestPort binds a listener on an OS-assigned free port and returns it
+// together with the port number. The caller is responsible for closing it.
+func reserveTestPort(t *testing.T) (net.Listener, int) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to reserve test port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	return listener, port
 }
 
 type errReader struct{}

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -37,6 +39,9 @@ var (
 	DEFAULT_OIDC_ACCESS_TOKEN_CACHE_EXPIRY_MINUTES = "15"
 	DEFAULT_OIDC_ATHENZ_EXTERNAL_ID_CLAIM          = "name"
 	DEFAULT_OIDC_ATHENZ_USERNAME_CLAIM             = "name"
+	DEFAULT_OIDC_CLOSE_WINDOW_DELAY                = "0" // seconds; 0 disables auto-close of the callback tab
+
+	maxPortSearchAttempts = 100
 
 	currentGOOS                   = runtime.GOOS
 	authCodeInputReader io.Reader = os.Stdin
@@ -52,13 +57,206 @@ var (
 			return nil
 		}
 	}
-	waitForCodeServerFunc    = waitForCodeServer
+	waitForCodeServerFunc = waitForCodeServer
+	closeBrowserTabFunc   = closeBrowserTab
+	reservePortFunc       = reserveCallbackListener
+	osascriptStartFunc    = func(script string) error {
+		return exec.Command("/usr/bin/osascript", "-e", script).Start()
+	}
 	oidcDiscoveryFunc        = GetOIDCDiscovery
 	buildPKCEOAuthConfigFunc = buildPKCEOAuthConfig
 	getAuthCodeResultFunc    = getAuthCodeResult
 	exchangeAuthCodeFunc     = exchangeAuthCode
 	randomReadFunc           = rand.Read
 )
+
+func closeWindowDelaySeconds() int {
+	delay, err := strconv.Atoi(strings.TrimSpace(DEFAULT_OIDC_CLOSE_WINDOW_DELAY))
+	if err != nil || delay < 0 {
+		return 0
+	}
+	return delay
+}
+
+// listenAddressBasePort extracts the port number from an OIDC listen address
+// such as ":8080" or "127.0.0.1:8080".
+func listenAddressBasePort(listenAddress string) (int, error) {
+	listenAddress = strings.TrimSpace(listenAddress)
+	if listenAddress == "" {
+		return 0, fmt.Errorf("OIDC listen address is empty")
+	}
+	_, portString, err := net.SplitHostPort(listenAddress)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse OIDC listen address %q: %v", listenAddress, err)
+	}
+	port, err := strconv.Atoi(portString)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse OIDC listen port %q: %v", portString, err)
+	}
+	return port, nil
+}
+
+// reserveCallbackListener binds a local callback listener, retrying on the
+// next port number when the requested port is already in use (up to
+// maxPortSearchAttempts). The returned listener stays open so the callback
+// server can serve on it without a check-to-use race.
+func reserveCallbackListener(basePort int) (net.Listener, int, error) {
+	for attempt := 0; attempt < maxPortSearchAttempts; attempt++ {
+		port := basePort + attempt
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			return listener, port, nil
+		}
+		if !isAddressInUse(err) {
+			return nil, 0, fmt.Errorf("failed to bind callback server to 127.0.0.1:%d: %v", port, err)
+		}
+	}
+	return nil, 0, fmt.Errorf("no free callback port found starting at %d after %d attempts", basePort, maxPortSearchAttempts)
+}
+
+func isAddressInUse(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		err = opErr.Err
+	}
+	var syscallErr *os.SyscallError
+	if errors.As(err, &syscallErr) {
+		err = syscallErr.Err
+	}
+	return errors.Is(err, syscall.EADDRINUSE)
+}
+
+// closeBrowserTab closes any Chrome or Safari tab whose URL starts with
+// urlPrefix. Browsers commonly refuse the success page's own window.close()
+// for tabs they consider not script-opened, so this reliably closes the
+// callback tab on macOS; on other platforms it is a no-op and the page's
+// countdown is the only close attempt. The AppleScript waits delaySecs+0.5
+// seconds before acting (letting the page countdown play out) and runs
+// detached (Start, no Wait) so it outlives the calling process. Errors are
+// written to stderr and otherwise ignored — this is best-effort cleanup. The
+// first run may trigger a one-time macOS Automation permission prompt,
+// attributed to the user's terminal application.
+func closeBrowserTab(urlPrefix string, delaySecs int) {
+	if currentGOOS != "darwin" {
+		return
+	}
+	script := fmt.Sprintf(`delay %.1f
+set theURL to %q
+tell application "System Events"
+	set runningApps to name of every process
+end tell
+if "Google Chrome" is in runningApps then
+	tell application "Google Chrome"
+		repeat with w in every window
+			repeat with t in every tab of w
+				if URL of t starts with theURL then
+					close t
+				end if
+			end repeat
+		end repeat
+	end tell
+end if
+if "Safari" is in runningApps then
+	tell application "Safari"
+		repeat with w in every window
+			repeat with t in every tab of w
+				if URL of t starts with theURL then
+					close t
+				end if
+			end repeat
+		end repeat
+	end tell
+end if`, float64(delaySecs)+0.5, urlPrefix)
+
+	if err := osascriptStartFunc(script); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start browser tab close: %v\n", err)
+	}
+}
+
+// closeWindowHTML returns the HTML page served after a successful OIDC
+// callback. When closeWindowDelay > 0 the page shows a live countdown and
+// attempts to close its own tab via window.close() when the countdown reaches
+// zero; otherwise it shows a static "You may close this window now" message.
+// window.close() is best-effort: some browsers only honor it for script-opened
+// tabs, in which case the message is reset to the static close instruction
+// before the close attempt so the page stays accurate.
+func closeWindowHTML(closeWindowDelay int) string {
+	closeMsg := "You may close this window now."
+	closeScript := ""
+	if closeWindowDelay > 0 {
+		unit := "seconds"
+		if closeWindowDelay == 1 {
+			unit = "second"
+		}
+		closeMsg = fmt.Sprintf("This window will close in %d %s.", closeWindowDelay, unit)
+		closeScript = fmt.Sprintf(closeWindowScriptTemplate, closeWindowDelay)
+	}
+	return strings.NewReplacer(
+		"__CLOSE_MSG__", closeMsg,
+		"__CLOSE_SCRIPT__", closeScript,
+	).Replace(closeWindowHTMLTemplate)
+}
+
+const closeWindowScriptTemplate = `  <script>
+    (function() {
+      var secs = %d;
+      var el = document.getElementById('close-msg');
+      var iv = setInterval(function() {
+        secs--;
+        if (secs <= 0) {
+          clearInterval(iv);
+          el.textContent = 'You may close this window now.';
+          window.close();
+        } else {
+          el.textContent = 'This window will close in ' + secs + ' second' + (secs === 1 ? '' : 's') + '.';
+        }
+      }, 1000);
+    })();
+  </script>
+`
+
+const closeWindowHTMLTemplate = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      margin: 0;
+    }
+
+    .message-box {
+      border: 0.125em solid purple;
+      padding: 1em;
+      margin: 1.25em 0;
+      font-family: Arial, sans-serif;
+      color: #333;
+      background-color: #f9f4ff;
+      border-radius: 0.5em;
+      display: table;
+      width: 90%;
+      max-width: 50em;
+      box-sizing: border-box;
+      text-align: center;
+      font-size: 1.25em;
+      line-height: 1.4;
+    }
+
+    .small-text {
+      font-size: 0.75em;
+      display: block;
+      margin-top: 0.25em;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="message-box">
+    <b>Authentication successful.</b><br>
+    <span class="small-text" id="close-msg">__CLOSE_MSG__</span>
+  </div>
+__CLOSE_SCRIPT__</body>
+</html>`
 
 func getAccessTokenCachePath() string {
 	h, _ := os.UserHomeDir()
@@ -463,6 +661,19 @@ func validateAuthCodeResult(result authCodeResult, expectedState string, require
 
 func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult, error) {
 	if currentGOOS == "darwin" || currentGOOS == "windows" {
+		closeWindowDelay := closeWindowDelaySeconds()
+
+		basePort, err := listenAddressBasePort(DEFAULT_OIDC_LISTEN_ADDRESS)
+		if err != nil {
+			return authCodeResult{}, err
+		}
+		listener, port, err := reservePortFunc(basePort)
+		if err != nil {
+			return authCodeResult{}, err
+		}
+		defer listener.Close()
+
+		conf.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 		authCodeURL, err := buildAuthCodeURL(conf, *responseMode)
 		if err != nil {
 			return authCodeResult{}, err
@@ -471,7 +682,7 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		serverDone := make(chan authCodeResult, 1)
 		serverErr := make(chan error, 1)
 		go func() {
-			result, err := waitForCodeServerFunc(DEFAULT_OIDC_LISTEN_ADDRESS)
+			result, err := waitForCodeServerFunc(listener, closeWindowDelay)
 			if err != nil {
 				serverErr <- err
 				return
@@ -486,6 +697,9 @@ func getAuthCodeResult(conf *oauthConfig, responseMode *string) (authCodeResult,
 		case result := <-serverDone:
 			if result.Code == "" {
 				return authCodeResult{}, fmt.Errorf("no authorization code in callback")
+			}
+			if closeWindowDelay > 0 {
+				closeBrowserTabFunc(fmt.Sprintf("http://127.0.0.1:%d", port), closeWindowDelay)
 			}
 			if err := validateAuthCodeResult(result, conf.State, true); err != nil {
 				return authCodeResult{}, err
@@ -658,14 +872,15 @@ func GetPasswordGrantAccessToken(username, password string, debug *bool) (string
 	return accessToken, nil
 }
 
-// waitForCodeServer runs a local HTTP server to capture the OAuth2 code via GET or POST.
-// Returns the code and the raw callback parameters.
-func waitForCodeServer(listenAddress string) (authCodeResult, error) {
+// waitForCodeServer runs a local HTTP server on the given listener to capture
+// the OAuth2 code via GET or POST. When closeWindowDelay > 0 the success page
+// auto-closes its own tab after a countdown. Returns the code and the raw
+// callback parameters.
+func waitForCodeServer(listener net.Listener, closeWindowDelay int) (authCodeResult, error) {
 	codeCh := make(chan authCodeResult, 1)
 	errCh := make(chan error, 1)
 	mux := http.NewServeMux()
 	server := &http.Server{
-		Addr:              listenAddress,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -676,12 +891,13 @@ func waitForCodeServer(listenAddress string) (authCodeResult, error) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		fmt.Fprintf(w, "Login successful! You can close this tab.")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, closeWindowHTML(closeWindowDelay))
 		codeCh <- result
 	})
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("failed to listen for authorization callback: %v", err)
 		}
 	}()
