@@ -260,7 +260,7 @@ func CACertPath() string {
 }
 
 func WritePEM(pemBlock *pem.Block, pemFilePath string) (err error) {
-	pemOut, err := os.Create(pemFilePath)
+	pemOut, err := os.OpenFile(pemFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		err = fmt.Errorf("Failed to open %s for writing: %v", pemFilePath, err)
 		return
